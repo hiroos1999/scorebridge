@@ -20,17 +20,41 @@ const DEGREE_ROLE = [
   "success",
 ];
 
-const STAFF_VB_H = 280;
+const STAFF_VB_H = 300;
 const STAFF_TOP = 100;
-const rowNames = ["A5", "G5", "F5", "E5", "D5", "C5", "B4", "A4", "G4", "F4", "E4", "D4", "C4"];
-const rowPcs = [9, 7, 5, 4, 2, 0, 11, 9, 7, 5, 4, 2, 0];
+// レギュラーチューニング6弦ギターの実音域（6弦開放=実音E2〜1弦12フレット=実音E5）を、
+// ギターの記譜慣習（実音より1オクターブ高く書く）に従って五線譜上に配置できるよう、
+// 下は加線3本のE3、上は加線2本のC6まで対応する（rows配列は上から下へ並ぶ）。
+const rowNames = [
+  "C6", "B5", "A5", "G5", "F5", "E5", "D5", "C5", "B4", "A4",
+  "G4", "F4", "E4", "D4", "C4", "B3", "A3", "G3", "F3", "E3",
+];
+const rowPcs = [0, 11, 9, 7, 5, 4, 2, 0, 11, 9, 7, 5, 4, 2, 0, 11, 9, 7, 5, 4];
 const rows = rowNames.map((name, i) => ({
-  y: STAFF_TOP - 20 + i * 10,
+  y: STAFF_TOP - 40 + i * 10,
   name,
   pc: rowPcs[i],
   octave: parseInt(name.slice(-1), 10),
 }));
-const MIDDLE_LINE_Y = rows[6].y; // B4, 五線の中央線
+const MIDDLE_LINE_Y = rows[8].y; // B4, 五線の中央線
+
+// 五線からはみ出た音符に必要な加線のy座標を全て返す（記譜法通り、線の位置に
+// あたる行のみに加線を引く。空間の位置の行は、その手前までの加線だけが
+// 表示されれば正しい）。五線の上端(STAFF_TOP)・下端(STAFF_TOP+80)から
+// 20px間隔（diatonic 2段ごと）で必要な本数だけ生成する。
+function ledgerLineYsForRow(rowY: number): number[] {
+  const staffTopLineY = STAFF_TOP;
+  const staffBottomLineY = STAFF_TOP + 80;
+  const ys: number[] = [];
+  if (rowY < staffTopLineY) {
+    const count = Math.floor((staffTopLineY - rowY) / 10 / 2);
+    for (let k = 1; k <= count; k++) ys.push(staffTopLineY - 20 * k);
+  } else if (rowY > staffBottomLineY) {
+    const count = Math.floor((rowY - staffBottomLineY) / 10 / 2);
+    for (let k = 1; k <= count; k++) ys.push(staffBottomLineY + 20 * k);
+  }
+  return ys;
+}
 
 // Bravura (SMuFL準拠, unitsPerEm=1000) のグリフ実測値。fontToolsのBoundsPenで
 // public/fonts/bravura.otf から直接取得し、SMuFL公式コードポイント表
@@ -111,8 +135,10 @@ function glyphBBoxCenterUnits(glyphName: string) {
   return (m.yMin + m.yMax) / 2;
 }
 
-const SHARP_KEY_ROWS = [2, 5, 1, 4, 7, 3, 6];
-const FLAT_KEY_ROWS = [6, 3, 7, 4, 1, 5, 2];
+// F,C,G,D,A,E,B(シャープ) / B,E,A,D,G,C,F(フラット)の順で、rows配列内の
+// 対応する行（F5,C5,G5,D5,A4,E5,B4 / B4,E5,A4,D5,G5,C5,F5）のインデックス。
+const SHARP_KEY_ROWS = [4, 7, 3, 6, 9, 5, 8];
+const FLAT_KEY_ROWS = [8, 5, 9, 6, 3, 7, 4];
 const SHARP_COUNT: Record<number, number> = { 0: 0, 2: 2, 4: 4, 7: 1, 9: 3, 11: 5 };
 const FLAT_COUNT: Record<number, number> = { 0: 0, 3: 3, 5: 1, 8: 4, 10: 2 };
 const AMBIG_SHARP: Record<number, number> = { 1: 7, 6: 6 };
@@ -179,41 +205,231 @@ function gridToMs(grid: number) {
   return (grid / 4) * QUARTER_NOTE_MS;
 }
 
+// メロディ（音価に応じて左から詰めて配置される単音・手動積み上げ和音）のみを表す。
+// startGridは自分が属するMeasure内でのローカルなグリッド番号（0〜gridsPerMeasure-1）。
 type Note = {
   startGrid: number;
   duration: number;
   isRest: boolean;
-  rowIdx: number | null;
-  accidental: number;
+  rowIdxList: number[]; // 単音なら要素1つ、手動で積み上げた和音なら複数
+  accidentals: Record<number, number>; // rowIdx -> 臨時記号（未設定キーは0扱い）
 };
 
+// コード選択UIで配置されるコードシンボル。MusicXMLのharmony要素に相当し、
+// 音価を持たず「小節内のどのタイミングか」「ルート」「コードの種類」
+// 「転回形（分数コードのベース音に相当）」だけを持つ、notesとは独立したデータ。
+type Harmony = {
+  offsetGrid: number; // 小節内でのタイミング（グリッド単位、MusicXMLのoffsetに相当）
+  root: number; // ルート音のピッチクラス
+  kind: string; // コードタイプ（maj7, m7, 7, dim, m7b5等。MusicXMLのkind相当）
+  inversion: number; // 転回形（0=基本形, 1=第1転回形…）。MusicXMLのinversion相当
+};
+
+type Measure = {
+  notes: Note[];
+  harmonies: Harmony[];
+};
+
+// 基本的な7thコード（ルートからの半音間隔）。
+const CHORD_TYPES: Record<string, number[]> = {
+  maj7: [0, 4, 7, 11],
+  m7: [0, 3, 7, 10],
+  "7": [0, 4, 7, 10],
+  dim: [0, 3, 6, 9],
+  m7b5: [0, 3, 6, 10],
+};
+const CHORD_TYPE_LABELS: Record<string, string> = {
+  maj7: "maj7",
+  m7: "m7",
+  "7": "7",
+  dim: "dim",
+  m7b5: "m7♭5",
+};
+// 転回形のラベル（インデックス=ベースになる構成音の順位。0=ルート）。
+// 3和音なら第2転回形まで、4和音（7thコード）なら第3転回形まで存在する。
+const INVERSION_LABELS = ["基本形", "第1転回形", "第2転回形", "第3転回形"];
+
+// 五線上の段(rows)は自然音名のみを持つため、半音（黒鍵相当）のピッチクラスを
+// どの自然音の段に臨時記号を付けて表すかのテーブル（#表記/♭表記どちらで書くか）。
+const CHROMATIC_SPELLING: Record<number, { sharpBase: number; flatBase: number }> = {
+  1: { sharpBase: 0, flatBase: 2 },
+  3: { sharpBase: 2, flatBase: 4 },
+  6: { sharpBase: 5, flatBase: 7 },
+  8: { sharpBase: 7, flatBase: 9 },
+  10: { sharpBase: 9, flatBase: 11 },
+};
+function naturalPcAndAccidentalForPc(pc: number, useFlats: boolean): { naturalPc: number; accidental: number } {
+  const spelling = CHROMATIC_SPELLING[pc];
+  if (!spelling) return { naturalPc: pc, accidental: 0 };
+  return useFlats
+    ? { naturalPc: spelling.flatBase, accidental: -1 }
+    : { naturalPc: spelling.sharpBase, accidental: 1 };
+}
+
+// 指定した自然音のピッチクラス・オクターブに対応する rows のインデックスを探す。
+// 五線の表示範囲(A5〜C4)に収まらない場合は近いオクターブにフォールバックする。
+function findRowIndex(naturalPc: number, octave: number): number {
+  let idx = rows.findIndex((r) => r.pc === naturalPc && r.octave === octave);
+  if (idx !== -1) return idx;
+  for (const delta of [1, -1, 2, -2]) {
+    idx = rows.findIndex((r) => r.pc === naturalPc && r.octave === octave + delta);
+    if (idx !== -1) return idx;
+  }
+  idx = rows.findIndex((r) => r.pc === naturalPc);
+  return idx !== -1 ? idx : 8;
+}
+
+// ルート音・コード種類・転回形から、各構成音を「直前の音より真上で一番近い」音に
+// なるよう積み上げていく簡易ボイシング（近い音域にまとまった自然な配置になる）。
+// 転回形は、構成音の並び順（何の音が一番下＝ベースになるか）をローテーションする
+// ことで表現する。例えばmaj7=[root,3rd,5th,7th]の第1転回形なら
+// [3rd,5th,7th,root]の順で一番下から積み上げる（rootは1オクターブ上に来る）。
+function buildChordVoicing(
+  rootPc: number,
+  chordType: string,
+  useFlats: boolean,
+  inversion = 0
+): { rowIdx: number; accidental: number }[] {
+  const intervals = CHORD_TYPES[chordType];
+  const inv = Math.min(Math.max(inversion, 0), intervals.length - 1);
+  const rotatedIntervals = [...intervals.slice(inv), ...intervals.slice(0, inv)];
+  const baseOctave = 4;
+  let prevAbs = baseOctave * 12 + ((rootPc + rotatedIntervals[0]) % 12);
+  const absPitches = [prevAbs];
+  for (let i = 1; i < rotatedIntervals.length; i++) {
+    const pc = (rootPc + rotatedIntervals[i]) % 12;
+    let abs = prevAbs + 1;
+    while (((abs % 12) + 12) % 12 !== pc) abs++;
+    absPitches.push(abs);
+    prevAbs = abs;
+  }
+  return absPitches.map((abs) => {
+    const octave = Math.floor(abs / 12);
+    const pc = ((abs % 12) + 12) % 12;
+    const { naturalPc, accidental } = naturalPcAndAccidentalForPc(pc, useFlats);
+    return { rowIdx: findRowIndex(naturalPc, octave), accidental };
+  });
+}
+
 type TimeSignature = { numerator: number; denominator: number };
+// 分母が8かつ分子が3の倍数（3/8, 6/8, 9/8, 12/8等）を複合拍子として扱う簡易判定。
+// 複合拍子では1拍＝付点4分音符（8分音符3つ＝グリッド6単位）になるため、
+// 連桁のグループ分け単位もこれに合わせて切り替える（単純拍子は4グリッド＝4分音符1つ分）。
+function isCompoundMeter(ts: TimeSignature): boolean {
+  return ts.denominator === 8 && ts.numerator % 3 === 0;
+}
 const TIME_SIG_OPTIONS: TimeSignature[] = [
   { numerator: 4, denominator: 4 },
   { numerator: 3, denominator: 4 },
   { numerator: 2, denominator: 4 },
+  { numerator: 3, denominator: 8 },
   { numerator: 6, denominator: 8 },
 ];
 
-const GRID_UNIT_WIDTH = 24;
 // 前回縮小した五線譜の高さ（見た目のスケール）を固定し、横幅だけが
-// GRID_UNIT_WIDTH に応じて自然に伸びるようにするための基準高さ(px)。
+// 1グリッドの幅に応じて自然に伸びるようにするための基準高さ(px)。
 const STAFF_RENDER_HEIGHT_PX = 296;
-const NOTE_AREA_MARGIN_RIGHT = 40;
+const NOTE_AREA_MARGIN_RIGHT = 20;
 const MEASURE_COUNT = 2;
+
+// 小節線の向こうに次の小節の頭をプレビュー表示するための設定。
+// 拍子によってGRID_UNIT_WIDTHが変わっても表示幅全体(STAFF_VB_W)は
+// 拍子に依存させたくないため、プレビューに使う横幅は固定ピクセル値にし、
+// その範囲に収まる分だけ次の小節の音符を（startGridで）表示する
+// （「1拍分程度で構わない」という仕様どおり、拍子によって実際に見える
+// 拍数は多少前後する）。見た目は現在の小節と同じ濃さ・大きさにし、
+// クリック編集の対象にならない点だけが機能面での違いとする。
+// 幅は、拍の単位が最も広くなるケース（2/4の4分音符1拍、6/8の付点4分音符
+// 1拍はどちらも192px相当）でも1拍分の連桁グループがまるごと収まるよう
+// 余裕を持たせている。
+const PREVIEW_GAP_PX = 16;
+const PREVIEW_WIDTH_PX = 200;
+const PREVIEW_SCALE = 1;
+const PREVIEW_OPACITY = 1;
+
+// 音符が置かれるエリア（LEFTから小節末尾まで）の表示幅を拍子によらず
+// 常に一定に保つための固定値。1グリッドあたりの幅(GRID_UNIT_WIDTH)は
+// このNOTE_AREA_WIDTHを1小節分のグリッド数で割って動的に算出する
+// （拍数が少ない拍子ほどグリッド1つが太くなり、多い拍子ほど細くなる）。
+const NOTE_AREA_WIDTH = 384;
+
+// ト音記号・拍子記号は調号（#/bの数）が変わっても位置がずれないよう、
+// 常に固定のx座標に描画する。調号の#/bはクレフの右側から固定間隔で
+// 可変長に並び、最大想定数（7個: 理論上の最大調号）でも拍子記号と
+// 重ならないよう、拍子記号の位置はその最大幅を見込んだ固定値にしてある。
+const CLEF_X = 0;
+// コード名(Cmaj7等)を表示する固定y座標。ト音記号の最上部(約y=72)・調号・
+// 五線範囲内の最高音(C6, y=60)よりもはっきり上になるよう、音符の実際の
+// 高さに関わらず常にこの固定位置に表示する（実際の楽譜のコードネーム表記と
+// 同様、音符の高さに追従させない）。
+const CHORD_LABEL_Y = 40;
+// 調号(#/♭)のグリフサイズ。通常のBRAVURA_FONT_SIZEより一回り小さくする。
+const KEY_SIG_FONT_SIZE = BRAVURA_FONT_SIZE * 0.75;
+const KEY_SIG_START_X = 64;
+const KEY_SIG_SPACING = 8;
+const MAX_KEY_SIG_COUNT = 7;
+// KEY_SIG_FONT_SIZEで実測したaccidentalSharp/Flatグリフの半幅相当。
+const KEY_SIG_ACCIDENTAL_HALF_WIDTH = 7.5;
+const KEY_SIG_TO_TIME_SIG_MARGIN = 5;
+const TIME_SIG_HALF_WIDTH = 19;
+const TIME_SIG_CENTER_X =
+  KEY_SIG_START_X +
+  (MAX_KEY_SIG_COUNT - 1) * KEY_SIG_SPACING +
+  KEY_SIG_ACCIDENTAL_HALF_WIDTH +
+  KEY_SIG_TO_TIME_SIG_MARGIN +
+  TIME_SIG_HALF_WIDTH;
+const TIME_SIG_RESERVED_W = 95;
+// 拍子記号の右側の余白を確保した上での、音符エリア開始位置（固定）。
+const LEFT_FIXED = TIME_SIG_CENTER_X + TIME_SIG_RESERVED_W / 2;
+// 休符は、五線の間隔（BRAVURA_FONT_SIZE=80で校正済み）は変えずに、見た目の
+// グリフサイズだけを現在の80%程度に縮小する。クリック判定などの座標計算は
+// rows[].yやGRID_UNIT_WIDTHなど別の値に基づくため、この縮小の影響を受けない。
+const REST_VISUAL_SCALE = 0.8;
+const REST_FONT_SIZE = BRAVURA_FONT_SIZE * REST_VISUAL_SCALE;
+// 符頭は視認性のため、五線の間隔からはみ出しすぎない範囲でやや大きめにする
+// （0.8倍だった従来サイズの約1.125倍 = 全体としては元のBRAVURA_FONT_SIZEの0.9倍）。
+// 符幹・連桁・旗の位置/長さはすべてこのNOTEHEAD_FONT_SIZEから算出されるため、
+// 符頭の拡大に自動的に追従する。
+const NOTEHEAD_VISUAL_SCALE = 0.9;
+const NOTEHEAD_FONT_SIZE = BRAVURA_FONT_SIZE * NOTEHEAD_VISUAL_SCALE;
+// 音符の臨時記号のフォントサイズは通常のグリフよりさらに一回り小さくする。
+const NOTE_ACCIDENTAL_FONT_SIZE = BRAVURA_FONT_SIZE * 0.55;
 
 export default function StaffToFretboard() {
   const [useFlats, setUseFlats] = useState(true);
   const [root, setRoot] = useState(0);
   const [timeSig, setTimeSig] = useState<TimeSignature>({ numerator: 4, denominator: 4 });
-  const [notes, setNotes] = useState<Note[]>([]);
+  // メロディ(notes)とコードシンボル(harmonies)は、MusicXMLのmeasure要素に倣い
+  // 小節ごとに独立したデータとして持つ。互いの追加・削除・編集は一切影響しない。
+  const [measures, setMeasures] = useState<Measure[]>(() =>
+    Array.from({ length: MEASURE_COUNT }, () => ({ notes: [], harmonies: [] }))
+  );
   const [selectedNoteKey, setSelectedNoteKey] = useState<number | null>(null);
+  const [selectedRowIdx, setSelectedRowIdx] = useState<number | null>(null);
+  // 新規配置する音符・休符のデフォルト音価。音価切り替えボタンで変更した
+  // 音価を次の新規配置にも引き継ぐ（起動時・クリア後はDEFAULT_DURATIONに戻す）。
+  const [defaultDuration, setDefaultDuration] = useState(DEFAULT_DURATION);
   const [restMode, setRestMode] = useState(false);
   const [fullFeedback, setFullFeedback] = useState(false);
   const [currentMeasureIndex, setCurrentMeasureIndex] = useState(0);
+  // 表示中の小節のnotes/harmoniesだけを操作する各種ハンドラから使う短縮参照。
+  const notes = measures[currentMeasureIndex].notes;
+  const harmonies = measures[currentMeasureIndex].harmonies;
+  function updateMeasureNotes(measureIndex: number, updater: (notes: Note[]) => Note[]) {
+    setMeasures((prev) => prev.map((m, i) => (i === measureIndex ? { ...m, notes: updater(m.notes) } : m)));
+  }
+  function updateMeasureHarmonies(measureIndex: number, updater: (harmonies: Harmony[]) => Harmony[]) {
+    setMeasures((prev) =>
+      prev.map((m, i) => (i === measureIndex ? { ...m, harmonies: updater(m.harmonies) } : m))
+    );
+  }
+  const [chordRoot, setChordRoot] = useState(0);
+  const [chordType, setChordType] = useState<string>("maj7");
+  const [chordInversion, setChordInversion] = useState(0);
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [playingNoteKey, setPlayingNoteKey] = useState<number | null>(null);
+  // ローカルなstartGridは小節をまたいで一意ではないため、どの小節の音符かも保持する。
+  const [playingNoteKey, setPlayingNoteKey] = useState<{ measureIndex: number; startGrid: number } | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -264,96 +480,176 @@ export default function StaffToFretboard() {
     osc.stop(now + durationSec);
   }
 
+  // notes(メロディ)とharmonies(コード)は完全に独立したデータなので、再生も
+  // それぞれ別の音源として小節の絶対時刻にスケジューリングし、最後にまとめて
+  // 時系列順に鳴らす。両者の対応関係は「同じ小節・同じ絶対時刻」だけで、
+  // データ上の結びつきは一切ない。
+  type PlaybackEvent =
+    | { atMs: number; endMs: number; measureIndex: number; kind: "note"; note: Note }
+    | { atMs: number; endMs: number; measureIndex: number; kind: "harmony"; harmony: Harmony };
+
   function handlePlayClick() {
     if (isPlaying) {
       stopPlayback();
       return;
     }
-    if (notes.length === 0) return;
+    const hasContent = measures.some((m) => m.notes.length > 0 || m.harmonies.length > 0);
+    if (!hasContent) return;
 
-    const sorted = [...notes].sort((a, b) => a.startGrid - b.startGrid);
-    const firstGrid = sorted[0].startGrid;
+    const measureDurationMs = gridToMs(gridsPerMeasure);
+    const events: PlaybackEvent[] = [];
+    measures.forEach((m, measureIndex) => {
+      const measureStartMs = measureIndex * measureDurationMs;
+      m.notes.forEach((note) => {
+        const atMs = measureStartMs + gridToMs(note.startGrid);
+        const toneSec = durationToMs(note.duration) / 1000;
+        events.push({ atMs, endMs: atMs + toneSec * 1000, measureIndex, kind: "note", note });
+      });
+      // harmonyは音価を持たないため、そのoffsetGridから小節の終わりまで鳴らす
+      // （「小節の間、コード音を鳴らす」の簡易実装）。
+      m.harmonies.forEach((harmony) => {
+        const atMs = measureStartMs + gridToMs(harmony.offsetGrid);
+        const toneSec = gridToMs(gridsPerMeasure - harmony.offsetGrid) / 1000;
+        events.push({ atMs, endMs: atMs + toneSec * 1000, measureIndex, kind: "harmony", harmony });
+      });
+    });
+    if (events.length === 0) return;
+    events.sort((a, b) => a.atMs - b.atMs);
+    const overallEndMs = Math.max(...events.map((e) => e.endMs));
+
     setIsPlaying(true);
-    // 再生開始時点で、最初の音符が属する小節にただちに表示を合わせる。
-    setCurrentMeasureIndex(Math.floor(firstGrid / gridsPerMeasure));
-    sorted.forEach((note, idx) => {
-      const startMs = gridToMs(note.startGrid - firstGrid);
-      const toneSec = durationToMs(note.duration) / 1000;
-      const timeoutId = setTimeout(() => {
-        // 再生中の音符/休符が属する小節に自動的に表示を追従させる。
-        setCurrentMeasureIndex(Math.floor(note.startGrid / gridsPerMeasure));
-        if (!note.isRest && note.rowIdx !== null) {
-          const absPitch = rows[note.rowIdx].octave * 12 + rows[note.rowIdx].pc + note.accidental;
-          setPlayingNoteKey(note.startGrid);
-          playTone(absPitch, toneSec);
-        } else {
-          // 休符の間は、前の音符のハイライトが残ったままにならないよう解除する。
-          setPlayingNoteKey(null);
-        }
+    // 再生開始時点で、最初のイベントが属する小節にただちに表示を合わせる。
+    setCurrentMeasureIndex(events[0].measureIndex);
 
-        if (idx === sorted.length - 1) {
-          const endTimeoutId = setTimeout(() => {
-            setIsPlaying(false);
+    events.forEach((ev) => {
+      const timeoutId = setTimeout(() => {
+        // 再生中の音符/コードが属する小節に自動的に表示を追従させる。
+        setCurrentMeasureIndex(ev.measureIndex);
+        const toneSec = (ev.endMs - ev.atMs) / 1000;
+        if (ev.kind === "note") {
+          const note = ev.note;
+          if (!note.isRest && note.rowIdxList.length > 0) {
+            setPlayingNoteKey({ measureIndex: ev.measureIndex, startGrid: note.startGrid });
+            // 和音（手動積み上げ）の場合は含まれる全ての音を同じタイミングで鳴らす。
+            note.rowIdxList.forEach((rowIdx) => {
+              const absPitch = rows[rowIdx].octave * 12 + rows[rowIdx].pc + (note.accidentals[rowIdx] ?? 0);
+              playTone(absPitch, toneSec);
+            });
+          } else {
+            // 休符の間は、前の音符のハイライトが残ったままにならないよう解除する。
             setPlayingNoteKey(null);
-          }, toneSec * 1000);
-          timeoutIdsRef.current.push(endTimeoutId);
+          }
+        } else {
+          const voiced = buildChordVoicing(ev.harmony.root, ev.harmony.kind, useFlats, ev.harmony.inversion);
+          voiced.forEach(({ rowIdx, accidental }) => {
+            const absPitch = rows[rowIdx].octave * 12 + rows[rowIdx].pc + accidental;
+            playTone(absPitch, toneSec);
+          });
         }
-      }, startMs);
+      }, ev.atMs);
       timeoutIdsRef.current.push(timeoutId);
     });
+
+    const endTimeoutId = setTimeout(() => {
+      setIsPlaying(false);
+      setPlayingNoteKey(null);
+    }, overallEndMs);
+    timeoutIdsRef.current.push(endTimeoutId);
   }
 
   const keySig = getKeySignature(root, useFlats);
   const sigRows = keySig.type === "sharp" ? SHARP_KEY_ROWS : FLAT_KEY_ROWS;
+  // 現在のキーの調号で#/♭が付く自然音名（ピッチクラス）の集合。
+  // 例: Ebメジャー(♭3つ: B,E,A)なら pc={11,4,9}。
+  const keySigAffectedPcs = new Set(sigRows.slice(0, keySig.count).map((idx) => rows[idx].pc));
+  // 新規に配置する音の臨時記号のデフォルト値。その音の自然音名が現在の
+  // キーの調号に含まれていれば#(+1)/♭(-1)、含まれていなければナチュラル(0)。
+  // ユーザーが▲/▼で明示的に変更した後は、その値がaccidentalsに直接
+  // 上書きされるため、この関数は「配置した瞬間の初期値」にのみ使われる。
+  function defaultAccidentalForRow(rowIdx: number): number {
+    if (!keySigAffectedPcs.has(rows[rowIdx].pc)) return 0;
+    return keySig.type === "sharp" ? 1 : -1;
+  }
+
+  // 正しい記譜法に沿った臨時記号の「表示」判定。実際の音の高さ計算
+  // （accidentalの値そのもの）には一切影響しない、表示のみのロジック。
+  // - その音が調号の対象で、accidentalが調号通りならすでに調号で示されているため非表示
+  // - 調号の対象で、accidentalが0（ナチュラルに戻す指定）なら♮を表示
+  // - それ以外（調号と異なる方向へさらに変化、または調号の対象外でaccidental!==0）は
+  //   #/♭を通常通り表示
+  function accidentalDisplayGlyph(rowIdx: number, accidental: number): "accidentalSharp" | "accidentalFlat" | "accidentalNatural" | null {
+    const keySigDefault = defaultAccidentalForRow(rowIdx);
+    if (keySigDefault !== 0) {
+      if (accidental === keySigDefault) return null;
+      if (accidental === 0) return "accidentalNatural";
+      return accidental === 1 ? "accidentalSharp" : "accidentalFlat";
+    }
+    if (accidental === 0) return null;
+    return accidental === 1 ? "accidentalSharp" : "accidentalFlat";
+  }
   const sigGlyphName = keySig.type === "sharp" ? "accidentalSharp" : "accidentalFlat";
   const sigChar = bravuraChar(sigGlyphName);
-  const sigStartX = 140;
-  const sigSpacing = 16;
-  const TIME_SIG_RESERVED_W = 95;
-  const keySigEndX = sigStartX + keySig.count * sigSpacing + 30;
-  const timeSigCenterX = keySigEndX + TIME_SIG_RESERVED_W / 2;
-  const LEFT = keySigEndX + TIME_SIG_RESERVED_W;
+  // ト音記号(CLEF_X)・拍子記号(TIME_SIG_CENTER_X)は常に固定位置。調号の#/bは
+  // KEY_SIG_START_Xから固定間隔で可変長に並ぶだけで、これらの位置には影響しない。
+  const sigStartX = KEY_SIG_START_X;
+  const sigSpacing = KEY_SIG_SPACING;
+  const timeSigCenterX = TIME_SIG_CENTER_X;
+  // 実際の調号がMAX_KEY_SIG_COUNTを超えることは想定していないが、
+  // 万一に備えて音符エリア開始位置(LEFT)は実際の調号末尾も考慮する。
+  const keySigActualEndX = sigStartX + keySig.count * sigSpacing + KEY_SIG_ACCIDENTAL_HALF_WIDTH;
+  const LEFT = Math.max(LEFT_FIXED, keySigActualEndX + KEY_SIG_TO_TIME_SIG_MARGIN);
 
   const gridsPerBeat = 16 / timeSig.denominator;
   const gridsPerMeasure = timeSig.numerator * gridsPerBeat;
-  const totalGrids = gridsPerMeasure * MEASURE_COUNT;
-  // 現在表示中の小節の先頭（グローバルなグリッド番号）。
-  const measureStartGrid = currentMeasureIndex * gridsPerMeasure;
-  // グローバルなグリッド番号を受け取り、現在表示中の小節を基準にした
-  // ローカルなx座標を返す（表示中の小節だけがviewBoxに収まる）。
-  const xForGrid = (g: number) => LEFT + (g - measureStartGrid) * GRID_UNIT_WIDTH;
-  const STAFF_VB_W = LEFT + gridsPerMeasure * GRID_UNIT_WIDTH + NOTE_AREA_MARGIN_RIGHT;
+  // 連桁のグループ分けに使う「1拍」の単位。単純拍子は4分音符(4グリッド)、
+  // 複合拍子は付点4分音符(6グリッド=8分音符3つ)ごとに区切る。
+  const beamGroupingUnit = isCompoundMeter(timeSig) ? 6 : 4;
+  // 拍子によらず音符エリアの表示幅(NOTE_AREA_WIDTH)を一定に保つため、
+  // 1グリッドあたりの幅を1小節のグリッド数から動的に算出する
+  // （拍数が少ない拍子ほど1グリッドが太く、多い拍子ほど細くなる）。
+  const GRID_UNIT_WIDTH = NOTE_AREA_WIDTH / gridsPerMeasure;
+  // Note.startGrid・Harmony.offsetGridは自分が属する小節内のローカルなグリッド番号
+  // なので、表示中の小節を基準にしたx座標への変換にオフセットは不要。
+  const xForGrid = (g: number) => LEFT + g * GRID_UNIT_WIDTH;
+  // 小節線(=xForGrid(gridsPerMeasure))の位置。この右側に次の小節の頭のプレビューを描画する。
+  const barlineX = LEFT + NOTE_AREA_WIDTH;
+  const previewXForGrid = (g: number) => barlineX + PREVIEW_GAP_PX + g * GRID_UNIT_WIDTH;
+  const STAFF_VB_W = barlineX + PREVIEW_GAP_PX + PREVIEW_WIDTH_PX + NOTE_AREA_MARGIN_RIGHT;
   // 高さを STAFF_RENDER_HEIGHT_PX に固定したまま、viewBoxの縦横比に応じて
   // 横幅だけを自然に伸ばす（縦のスケール＝ト音記号や五線の間隔は変えない）。
   const staffRenderedWidth = STAFF_RENDER_HEIGHT_PX * (STAFF_VB_W / STAFF_VB_H);
 
-  // 表示専用: 小節の頭（小節線と同じグリッド）に音符が来る場合、玉が小節線と
-  // 重なって見づらいため、描画位置だけを少し右にずらす。startGrid（拍・グリッド計算、
-  // 再生タイミング、クリック判定）には一切影響しない。
-  const BARLINE_NOTE_VISUAL_OFFSET = 14;
-  const displayXForNote = (startGrid: number) => {
-    const rawX = xForGrid(startGrid);
-    const isAtBarline = startGrid > 0 && startGrid % gridsPerMeasure === 0;
-    return isAtBarline ? rawX + BARLINE_NOTE_VISUAL_OFFSET : rawX;
-  };
+  // 1小節ずつ表示するページネーションでは、表示中の小節の先頭（LEFT）には
+  // 小節線が描画されない（小節線は表示中の小節の右端にのみ描画される）ため、
+  // 小節の頭に音符が来ても小節線と重なることはない。そのためxForGridの値を
+  // そのまま使う（以前は小節線との重なり回避のオフセットを加えていたが、
+  // 1小節ずつのページネーション導入後は不要になっていたため削除した）。
+  const displayXForNote = (startGrid: number) => xForGrid(startGrid);
 
   const names = useFlats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP;
 
   function handleTimeSigChange(numerator: number, denominator: number) {
     const newGridsPerMeasure = numerator * (16 / denominator);
-    const newTotalGrids = newGridsPerMeasure * 2;
     setTimeSig({ numerator, denominator });
-    setNotes((prev) => prev.filter((n) => n.startGrid + n.duration <= newTotalGrids));
+    // harmonyはoffsetGrid=0のみサポートのため、拍子変更で無効になることはない。
+    // notesは小節の長さが変わることで収まらなくなった音符だけを取り除く。
+    setMeasures((prev) =>
+      prev.map((m) => ({ ...m, notes: m.notes.filter((n) => n.startGrid + n.duration <= newGridsPerMeasure) }))
+    );
   }
 
+  // 五線譜のクリックによる配置・削除はnotes（メロディ）だけを対象にする。
+  // harmonies（コード）はこのハンドラでは一切参照・変更しない。
   function handleStaffClick(e: React.MouseEvent<SVGSVGElement>) {
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (STAFF_VB_W / rect.width);
     const y = (e.clientY - rect.top) * (STAFF_VB_H / rect.height);
-    let localGrid = Math.round((x - LEFT) / GRID_UNIT_WIDTH);
-    localGrid = Math.max(0, Math.min(gridsPerMeasure - 1, localGrid));
-    const grid = localGrid + measureStartGrid;
+    // 小節線より右側（次の小節のプレビュー領域）のクリックは無視する。
+    // プレビューは表示のみで、クリック・編集の対象は表示中の小節に限る。
+    if (x > barlineX) return;
+    let grid = Math.round((x - LEFT) / GRID_UNIT_WIDTH);
+    grid = Math.max(0, Math.min(gridsPerMeasure - 1, grid));
     let rowIdx = Math.round((y - rows[0].y) / 10);
     rowIdx = Math.max(0, Math.min(rows.length - 1, rowIdx));
 
@@ -361,24 +657,57 @@ export default function StaffToFretboard() {
     if (covering) {
       if (restMode) {
         if (covering.isRest) {
-          setNotes(notes.filter((n) => n !== covering));
+          updateMeasureNotes(currentMeasureIndex, (ns) => ns.filter((n) => n !== covering));
           setSelectedNoteKey((prev) => (prev === covering.startGrid ? null : prev));
+          setSelectedRowIdx(null);
         } else {
-          setNotes(
-            notes.map((n) => (n === covering ? { ...n, isRest: true, rowIdx: null, accidental: 0 } : n))
+          updateMeasureNotes(currentMeasureIndex, (ns) =>
+            ns.map((n) => (n === covering ? { ...n, isRest: true, rowIdxList: [], accidentals: {} } : n))
           );
           setSelectedNoteKey(covering.startGrid);
+          setSelectedRowIdx(null);
         }
       } else {
         if (covering.isRest) {
-          setNotes(notes.map((n) => (n === covering ? { ...n, isRest: false, rowIdx, accidental: 0 } : n)));
+          updateMeasureNotes(currentMeasureIndex, (ns) =>
+            ns.map((n) =>
+              n === covering
+                ? {
+                    ...n,
+                    isRest: false,
+                    rowIdxList: [rowIdx],
+                    accidentals: { [rowIdx]: defaultAccidentalForRow(rowIdx) },
+                  }
+                : n
+            )
+          );
           setSelectedNoteKey(covering.startGrid);
-        } else if (covering.rowIdx === rowIdx) {
-          setNotes(notes.filter((n) => n !== covering));
-          setSelectedNoteKey((prev) => (prev === covering.startGrid ? null : prev));
+          setSelectedRowIdx(rowIdx);
+        } else if (covering.rowIdxList.includes(rowIdx)) {
+          // 既に和音に含まれる音を同じ段でクリック -> その音だけ和音から削除。
+          const newList = covering.rowIdxList.filter((r) => r !== rowIdx);
+          const newAccidentals = { ...covering.accidentals };
+          delete newAccidentals[rowIdx];
+          if (newList.length === 0) {
+            updateMeasureNotes(currentMeasureIndex, (ns) => ns.filter((n) => n !== covering));
+            setSelectedNoteKey((prev) => (prev === covering.startGrid ? null : prev));
+            setSelectedRowIdx(null);
+          } else {
+            updateMeasureNotes(currentMeasureIndex, (ns) =>
+              ns.map((n) => (n === covering ? { ...n, rowIdxList: newList, accidentals: newAccidentals } : n))
+            );
+            setSelectedNoteKey(covering.startGrid);
+            setSelectedRowIdx((prev) => (prev === rowIdx ? newList[0] : prev));
+          }
         } else {
-          setNotes(notes.map((n) => (n === covering ? { ...n, rowIdx, accidental: 0 } : n)));
+          // 既存音符がある位置で違う段をクリック -> その音を和音に追加する。
+          const newList = [...covering.rowIdxList, rowIdx].sort((a, b) => a - b);
+          const newAccidentals = { ...covering.accidentals, [rowIdx]: defaultAccidentalForRow(rowIdx) };
+          updateMeasureNotes(currentMeasureIndex, (ns) =>
+            ns.map((n) => (n === covering ? { ...n, rowIdxList: newList, accidentals: newAccidentals } : n))
+          );
           setSelectedNoteKey(covering.startGrid);
+          setSelectedRowIdx(rowIdx);
         }
       }
       return;
@@ -388,41 +717,68 @@ export default function StaffToFretboard() {
     // 現在配置されている音符・休符のうち一番右端（末尾）の直後の
     // 空きグリッドに自動追加する。y座標（音高）だけがクリック内容を左右する。
     const appendGrid = notes.length === 0 ? 0 : Math.max(...notes.map((n) => n.startGrid + n.duration));
-    if (appendGrid >= totalGrids) {
+    if (appendGrid >= gridsPerMeasure) {
       setFullFeedback(true);
       setTimeout(() => setFullFeedback(false), 250);
       return;
     }
-    const duration = Math.min(DEFAULT_DURATION, totalGrids - appendGrid);
+    const duration = Math.min(defaultDuration, gridsPerMeasure - appendGrid);
     const newNote: Note = restMode
-      ? { startGrid: appendGrid, duration, isRest: true, rowIdx: null, accidental: 0 }
-      : { startGrid: appendGrid, duration, isRest: false, rowIdx, accidental: 0 };
-    setNotes([...notes, newNote].sort((a, b) => a.startGrid - b.startGrid));
+      ? { startGrid: appendGrid, duration, isRest: true, rowIdxList: [], accidentals: {} }
+      : {
+          startGrid: appendGrid,
+          duration,
+          isRest: false,
+          rowIdxList: [rowIdx],
+          accidentals: { [rowIdx]: defaultAccidentalForRow(rowIdx) },
+        };
+    updateMeasureNotes(currentMeasureIndex, (ns) => [...ns, newNote].sort((a, b) => a.startGrid - b.startGrid));
     setSelectedNoteKey(appendGrid);
+    setSelectedRowIdx(restMode ? null : rowIdx);
   }
 
-  // ▲: #でなければ#にする、既に#ならナチュラルに戻す。
-  function pressSharp(startGrid: number) {
-    setNotes((prev) =>
-      prev.map((n) => (n.startGrid === startGrid ? { ...n, accidental: n.accidental === 1 ? 0 : 1 } : n))
+  // ▲: 選択中のピッチが#でなければ#にする、既に#ならナチュラルに戻す。
+  function pressSharp(startGrid: number, targetRowIdx: number) {
+    updateMeasureNotes(currentMeasureIndex, (ns) =>
+      ns.map((n) => {
+        if (n.startGrid !== startGrid) return n;
+        const current = n.accidentals[targetRowIdx] ?? 0;
+        return { ...n, accidentals: { ...n.accidentals, [targetRowIdx]: current === 1 ? 0 : 1 } };
+      })
     );
   }
 
-  // ▼: ♭でなければ♭にする、既に♭ならナチュラルに戻す。
-  function pressFlat(startGrid: number) {
-    setNotes((prev) =>
-      prev.map((n) => (n.startGrid === startGrid ? { ...n, accidental: n.accidental === -1 ? 0 : -1 } : n))
+  // ▼: 選択中のピッチが♭でなければ♭にする、既に♭ならナチュラルに戻す。
+  function pressFlat(startGrid: number, targetRowIdx: number) {
+    updateMeasureNotes(currentMeasureIndex, (ns) =>
+      ns.map((n) => {
+        if (n.startGrid !== startGrid) return n;
+        const current = n.accidentals[targetRowIdx] ?? 0;
+        return { ...n, accidentals: { ...n.accidentals, [targetRowIdx]: current === -1 ? 0 : -1 } };
+      })
     );
+  }
+
+  // 「和音を配置」は表示中の小節のharmoniesだけを対象にする。notesには一切触れない。
+  // 今はoffsetGrid=0のみサポートなので、同じ小節に既にharmonyがあれば置き換え、
+  // なければ追加する（同じ拍に和音記号が2つ重なって表示される事故を防ぐ）。
+  function handlePlaceChord() {
+    const offsetGrid = 0;
+    const harmony: Harmony = { offsetGrid, root: chordRoot, kind: chordType, inversion: chordInversion };
+    updateMeasureHarmonies(currentMeasureIndex, (hs) => [
+      ...hs.filter((h) => h.offsetGrid !== offsetGrid),
+      harmony,
+    ]);
   }
 
   function cycleDuration(startGrid: number) {
-    setNotes((prev) => {
+    updateMeasureNotes(currentMeasureIndex, (prev) => {
       const sorted = [...prev].sort((a, b) => a.startGrid - b.startGrid);
       const idx = sorted.findIndex((n) => n.startGrid === startGrid);
       if (idx === -1) return prev;
       const note = sorted[idx];
       const nextNote = sorted[idx + 1];
-      const maxAllowed = nextNote ? nextNote.startGrid - note.startGrid : totalGrids - note.startGrid;
+      const maxAllowed = nextNote ? nextNote.startGrid - note.startGrid : gridsPerMeasure - note.startGrid;
 
       // 直後の候補が入らない場合、そこで諦めず、入る音価が見つかるまで
       // サイクル順に探し続ける（入らない値をスキップして先に進む）。
@@ -431,13 +787,19 @@ export default function StaffToFretboard() {
         candidate = nextDurationInCycle(candidate);
       }
       if (candidate > maxAllowed) return prev;
+      // 音価切り替えボタンで変更した音価を、次に新規配置する音符・休符のデフォルトにも引き継ぐ。
+      setDefaultDuration(candidate);
       return sorted.map((n, i) => (i === idx ? { ...n, duration: candidate } : n));
     });
   }
 
+  // 全小節のnotes・harmoniesを両方まとめてリセットする（従来の「クリア」ボタンの
+  // 挙動を、独立した2つのデータに対しても踏襲する）。
   function handleClear() {
-    setNotes([]);
+    setMeasures(Array.from({ length: MEASURE_COUNT }, () => ({ notes: [], harmonies: [] })));
     setSelectedNoteKey(null);
+    setSelectedRowIdx(null);
+    setDefaultDuration(DEFAULT_DURATION);
   }
 
   // オクターブを含めた実際の音の高さ（絶対ピッチ = octave*12 + pc + 臨時記号）で
@@ -446,20 +808,34 @@ export default function StaffToFretboard() {
   // ギター（移調楽器）の記譜慣習により、実際に鳴る音は記譜より1オクターブ低いため、
   // 指板とのマッチング判定にのみ -12 半音する（度数ラベルや調号などの表示には影響させない）。
   const GUITAR_SOUNDING_OCTAVE_OFFSET = -12;
+  // 指板に表示するのはメロディ(notes)のピッチのみ。harmoniesは指板ハイライトの対象外。
   const activePitches = new Set(
-    notes
-      .filter((n): n is Note & { rowIdx: number } => !n.isRest && n.rowIdx !== null)
-      .map((n) => rows[n.rowIdx].octave * 12 + rows[n.rowIdx].pc + n.accidental + GUITAR_SOUNDING_OCTAVE_OFFSET)
+    measures
+      .flatMap((m) => m.notes)
+      .filter((n) => !n.isRest)
+      .flatMap((n) =>
+        n.rowIdxList.map(
+          (rowIdx) =>
+            rows[rowIdx].octave * 12 + rows[rowIdx].pc + (n.accidentals[rowIdx] ?? 0) + GUITAR_SOUNDING_OCTAVE_OFFSET
+        )
+      )
   );
-  // 再生中の音符（休符やnullの場合はnull）の実際の音の高さ。指板側のハイライトに使う。
-  const playingNote = notes.find((n) => n.startGrid === playingNoteKey);
-  const playingAbsPitch =
-    playingNote && !playingNote.isRest && playingNote.rowIdx !== null
-      ? rows[playingNote.rowIdx].octave * 12 +
-        rows[playingNote.rowIdx].pc +
-        playingNote.accidental +
-        GUITAR_SOUNDING_OCTAVE_OFFSET
-      : null;
+  // 再生中の音符（和音の場合は全ての構成音）の実際の音の高さ。指板側のハイライトに使う。
+  // ローカルなstartGridは小節をまたいで一意ではないため、measureIndexも一致させる。
+  const playingNote = playingNoteKey
+    ? measures[playingNoteKey.measureIndex]?.notes.find((n) => n.startGrid === playingNoteKey.startGrid)
+    : undefined;
+  const playingAbsPitches = new Set(
+    playingNote && !playingNote.isRest
+      ? playingNote.rowIdxList.map(
+          (rowIdx) =>
+            rows[rowIdx].octave * 12 +
+            rows[rowIdx].pc +
+            (playingNote.accidentals[rowIdx] ?? 0) +
+            GUITAR_SOUNDING_OCTAVE_OFFSET
+        )
+      : []
+  );
 
   const fbLeft = 100;
   const fbTop = 30;
@@ -471,25 +847,73 @@ export default function StaffToFretboard() {
   // flag8thUp/Down・flag16thUp/Downを符幹の先端に配置する。16分音符も含め全音価が
   // フォントグリフのみで描画できる（手描きフォールバックは不要）。
   const NOTEHEAD_XMAX: Record<string, number> = { noteheadWhole: 422, noteheadHalf: 295, noteheadBlack: 295 };
-  function renderNoteGlyph(x: number, rowY: number, duration: number, fill: string) {
-    const stemDown = rowY < MIDDLE_LINE_Y;
-    const scale = BRAVURA_FONT_SIZE / BRAVURA_UPM;
+  function noteheadGlyphForDuration(duration: number) {
+    return duration === 16 ? "noteheadWhole" : duration === 8 ? "noteheadHalf" : "noteheadBlack";
+  }
+  function renderChordNoteheadsOnly(
+    x: number,
+    pitches: { rowY: number; fill: string; opacity?: number }[],
+    duration: number
+  ) {
+    const noteheadGlyph = noteheadGlyphForDuration(duration);
+    return (
+      <>
+        {pitches.map((p, i) => (
+          <text
+            key={i}
+            x={x}
+            y={p.rowY}
+            fontSize={NOTEHEAD_FONT_SIZE}
+            fontFamily="Bravura"
+            textAnchor="middle"
+            fill={p.fill}
+            opacity={p.opacity ?? 1}
+          >
+            {bravuraChar(noteheadGlyph)}
+          </text>
+        ))}
+      </>
+    );
+  }
 
-    const noteheadGlyph = duration === 16 ? "noteheadWhole" : duration === 8 ? "noteheadHalf" : "noteheadBlack";
-    // noteheadWhole/Half/Black はいずれも yMin=-125,yMax=125 で原点(0)が符頭の中心と一致する。
-    const baselineY = rowY;
+  // 単音は要素1つの「和音」として扱う。符幹の向きは全構成音のうち中央線から
+  // 最も遠い音で決め、符幹は近い側の符頭から遠い側の符頭を通り抜けてさらに
+  // STEM_LENGTH_UNITS分伸びる1本の直線として描く（符頭が1つの場合は元の単音の
+  // 計算式に厳密に一致する）。連桁でつながるグループに属する音符は、この関数ではなく
+  // renderBeamedGroup（符幹）+ renderChordNoteheadsOnly（符頭のみ）で描画される。
+  function renderChordNoteheadsAndStem(
+    x: number,
+    pitches: { rowY: number; fill: string; opacity?: number }[],
+    duration: number
+  ) {
+    const scale = NOTEHEAD_FONT_SIZE / BRAVURA_UPM;
+    const noteheadGlyph = noteheadGlyphForDuration(duration);
     const halfWidth = (NOTEHEAD_XMAX[noteheadGlyph] / 2) * scale;
+
+    const ys = pitches.map((p) => p.rowY);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const stemDown = MIDDLE_LINE_Y - minY > maxY - MIDDLE_LINE_Y;
+    const stemColor = pitches.length === 1 ? pitches[0].fill : "var(--text-primary)";
 
     const hasStem = duration <= 8;
     let stemLine = null;
     let stemAttachX = x;
-    let stemTipY = rowY;
+    let stemTipY = pitches[0]?.rowY ?? MIDDLE_LINE_Y;
     if (hasStem) {
       const anchor = stemDown ? STEM_DOWN_NW : STEM_UP_SE;
       stemAttachX = stemDown ? x - halfWidth : x + halfWidth;
-      const attachY = rowY - anchor.dy * scale;
-      stemTipY = stemDown ? attachY + STEM_LENGTH_UNITS * scale : attachY - STEM_LENGTH_UNITS * scale;
-      stemLine = <line x1={stemAttachX} y1={attachY} x2={stemAttachX} y2={stemTipY} stroke={fill} strokeWidth={1.5} />;
+      let attachY: number;
+      if (stemDown) {
+        attachY = minY - anchor.dy * scale;
+        stemTipY = maxY - anchor.dy * scale + STEM_LENGTH_UNITS * scale;
+      } else {
+        attachY = maxY - anchor.dy * scale;
+        stemTipY = minY - anchor.dy * scale - STEM_LENGTH_UNITS * scale;
+      }
+      stemLine = (
+        <line x1={stemAttachX} y1={attachY} x2={stemAttachX} y2={stemTipY} stroke={stemColor} strokeWidth={1.5} />
+      );
     }
 
     const flagGlyph =
@@ -505,15 +929,136 @@ export default function StaffToFretboard() {
 
     return (
       <>
-        <text x={x} y={baselineY} fontSize={BRAVURA_FONT_SIZE} fontFamily="Bravura" textAnchor="middle" fill={fill}>
-          {bravuraChar(noteheadGlyph)}
-        </text>
+        {renderChordNoteheadsOnly(x, pitches, duration)}
         {stemLine}
         {flagGlyph && (
-          <text x={stemAttachX} y={stemTipY} fontSize={BRAVURA_FONT_SIZE} fontFamily="Bravura" fill={fill}>
+          <text x={stemAttachX} y={stemTipY} fontSize={NOTEHEAD_FONT_SIZE} fontFamily="Bravura" fill={stemColor}>
             {bravuraChar(flagGlyph)}
           </text>
         )}
+      </>
+    );
+  }
+
+  type BeamCandidate = { note: Note; x: number; pitches: { rowY: number; fill: string }[] };
+
+  // 表示中の音符列（休符含む）を先頭から走査し、8分・16分音符が同じ拍内で
+  // 隙間なく連続している区間だけを連桁グループとしてまとめる。休符・
+  // 連桁対象外の音価（4分以上）・拍をまたぐ場合はグループを区切る。
+  function computeBeamGroups(candidates: BeamCandidate[]): BeamCandidate[][] {
+    const groups: BeamCandidate[][] = [];
+    let current: BeamCandidate[] = [];
+    let currentBeatIdx: number | null = null;
+    for (const c of candidates) {
+      const beamable = !c.note.isRest && c.note.duration <= 8;
+      if (!beamable) {
+        if (current.length) groups.push(current);
+        current = [];
+        currentBeatIdx = null;
+        continue;
+      }
+      // note.startGridは自分が属する小節内のローカルなグリッド番号なので、そのまま使う。
+      const beatIdx = Math.floor(c.note.startGrid / beamGroupingUnit);
+      const prev = current[current.length - 1];
+      const contiguous = !prev || prev.note.startGrid + prev.note.duration === c.note.startGrid;
+      if (current.length > 0 && beatIdx === currentBeatIdx && contiguous) {
+        current.push(c);
+      } else {
+        if (current.length) groups.push(current);
+        current = [c];
+        currentBeatIdx = beatIdx;
+      }
+    }
+    if (current.length) groups.push(current);
+    return groups;
+  }
+
+  const BEAM_THICKNESS = 4;
+  const BEAM_GAP = 6;
+
+  // グループ内の符幹の向きは、全構成音（和音を含む）のうち中央線から最も
+  // 遠い音を基準に1つに統一する（既存の単音/和音の判定ロジックの拡張）。
+  // 連桁の高さは、各音符が単独の符幹だった場合の先端位置のうち最も外側の
+  // ものを採用し、他の音符の符幹はその高さまで伸ばして接続する。
+  function renderBeamedGroup(group: BeamCandidate[]) {
+    const scale = NOTEHEAD_FONT_SIZE / BRAVURA_UPM;
+    const halfWidth = (NOTEHEAD_XMAX.noteheadBlack / 2) * scale;
+
+    const allYs = group.flatMap((n) => n.pitches.map((p) => p.rowY));
+    const minY = Math.min(...allYs);
+    const maxY = Math.max(...allYs);
+    const stemDown = MIDDLE_LINE_Y - minY > maxY - MIDDLE_LINE_Y;
+    const anchor = stemDown ? STEM_DOWN_NW : STEM_UP_SE;
+
+    function naturalTipY(n: BeamCandidate) {
+      const ys = n.pitches.map((p) => p.rowY);
+      const nMinY = Math.min(...ys);
+      const nMaxY = Math.max(...ys);
+      return stemDown
+        ? nMaxY - anchor.dy * scale + STEM_LENGTH_UNITS * scale
+        : nMinY - anchor.dy * scale - STEM_LENGTH_UNITS * scale;
+    }
+    const naturalTips = group.map(naturalTipY);
+    const beamY = stemDown ? Math.max(...naturalTips) : Math.min(...naturalTips);
+    const secondaryBeamY = stemDown ? beamY - BEAM_GAP : beamY + BEAM_GAP;
+
+    const stems = group.map((n) => {
+      const ys = n.pitches.map((p) => p.rowY);
+      const nMinY = Math.min(...ys);
+      const nMaxY = Math.max(...ys);
+      const attachY = stemDown ? nMinY - anchor.dy * scale : nMaxY - anchor.dy * scale;
+      const stemAttachX = stemDown ? n.x - halfWidth : n.x + halfWidth;
+      const stemColor = n.pitches.length === 1 ? n.pitches[0].fill : "var(--text-primary)";
+      return { stemAttachX, attachY, stemColor };
+    });
+
+    // 16分音符が2つ以上連続する区間だけ副連桁（2本目）を部分連桁として描く。
+    const secondarySegments: { fromX: number; toX: number }[] = [];
+    let runStart: number | null = null;
+    for (let i = 0; i <= group.length; i++) {
+      const is16th = i < group.length && group[i].note.duration === 1;
+      if (is16th) {
+        if (runStart === null) runStart = i;
+      } else {
+        if (runStart !== null && i - runStart >= 2) {
+          secondarySegments.push({ fromX: stems[runStart].stemAttachX, toX: stems[i - 1].stemAttachX });
+        }
+        runStart = null;
+      }
+    }
+
+    return (
+      <>
+        {stems.map((s, i) => (
+          <line
+            key={`stem-${i}`}
+            x1={s.stemAttachX}
+            y1={s.attachY}
+            x2={s.stemAttachX}
+            y2={beamY}
+            stroke={s.stemColor}
+            strokeWidth={1.5}
+          />
+        ))}
+        <line
+          x1={stems[0].stemAttachX}
+          y1={beamY}
+          x2={stems[stems.length - 1].stemAttachX}
+          y2={beamY}
+          stroke="var(--text-primary)"
+          strokeWidth={BEAM_THICKNESS}
+        />
+        {secondarySegments.map((seg, i) => (
+          <line
+            key={`beam2-${i}`}
+            x1={seg.fromX}
+            y1={secondaryBeamY}
+            x2={seg.toX}
+            y2={secondaryBeamY}
+            stroke="var(--text-primary)"
+            strokeWidth={BEAM_THICKNESS}
+          />
+        ))}
       </>
     );
   }
@@ -530,11 +1075,195 @@ export default function StaffToFretboard() {
     };
     const glyph = glyphMap[duration];
     const centerUnits = glyphBBoxCenterUnits(glyph);
-    const baselineY = baselineYForGlyphCenter(LINE3_Y, BRAVURA_FONT_SIZE, centerUnits);
+    const baselineY = baselineYForGlyphCenter(LINE3_Y, REST_FONT_SIZE, centerUnits);
     return (
-      <text x={x} y={baselineY} fontSize={BRAVURA_FONT_SIZE} fontFamily="Bravura" textAnchor="middle" fill={fill}>
+      <text x={x} y={baselineY} fontSize={REST_FONT_SIZE} fontFamily="Bravura" textAnchor="middle" fill={fill}>
         {bravuraChar(glyph)}
       </text>
+    );
+  }
+
+  // 通常表示中の小節と、次の小節のプレビューの両方から共通で使う描画処理。
+  // 連桁のグループ化（computeBeamGroups、複合拍子対応を含む）を含めて完全に
+  // 共有することで、両者の見た目・連桁化ロジックが常に一致するようにする。
+  // showPlayingRingだけを呼び出し側で切り替える（プレビューでは再生中マーカーを出さない）。
+  function renderNotesWithBeams(
+    notesToRender: Note[],
+    xForNote: (startGrid: number) => number,
+    showPlayingRing: boolean,
+    measureIndex: number
+  ) {
+    const candidates: BeamCandidate[] = notesToRender.map((note) => ({
+      note,
+      x: xForNote(note.startGrid),
+      pitches: note.isRest
+        ? []
+        : note.rowIdxList.map((rowIdx) => {
+            const row = rows[rowIdx];
+            const acc = note.accidentals[rowIdx] ?? 0;
+            const pc = (row.pc + acc + 12) % 12;
+            const deg = degreeFor(pc, root);
+            const [fill] = colorFor(DEGREE_ROLE[deg]);
+            return { rowY: row.y, fill };
+          }),
+    }));
+    const beamGroups = computeBeamGroups(candidates).filter((g) => g.length >= 2);
+    const beamedStartGrids = new Set(beamGroups.flatMap((g) => g.map((c) => c.note.startGrid)));
+
+    return (
+      <>
+        {notesToRender.map((note) => {
+          const x = xForNote(note.startGrid);
+
+          if (note.isRest) {
+            return (
+              <g key={note.startGrid}>{renderRestGlyph(x, note.duration, "var(--text-secondary)")}</g>
+            );
+          }
+
+          const pitchInfos = note.rowIdxList.map((rowIdx) => {
+            const row = rows[rowIdx];
+            const acc = note.accidentals[rowIdx] ?? 0;
+            const pc = (row.pc + acc + 12) % 12;
+            const deg = degreeFor(pc, root);
+            const [fill] = colorFor(DEGREE_ROLE[deg]);
+            const ledgerYs = ledgerLineYsForRow(row.y);
+            return { rowIdx, row, acc, fill, ledgerYs };
+          });
+          const isBeamed = beamedStartGrids.has(note.startGrid);
+          return (
+            <g key={note.startGrid}>
+              {pitchInfos.map((p) =>
+                p.ledgerYs.map((ly) => (
+                  <line
+                    key={`ledger-${p.rowIdx}-${ly}`}
+                    x1={x - 12}
+                    x2={x + 12}
+                    y1={ly}
+                    y2={ly}
+                    stroke="var(--border-strong)"
+                  />
+                ))
+              )}
+              {pitchInfos.map((p) => {
+                const glyph = accidentalDisplayGlyph(p.rowIdx, p.acc);
+                if (!glyph) return null;
+                return (
+                  <text
+                    key={`acc-${p.rowIdx}`}
+                    x={x - 18}
+                    y={p.row.y}
+                    fontSize={NOTE_ACCIDENTAL_FONT_SIZE}
+                    fontFamily="Bravura"
+                    textAnchor="middle"
+                    fill="var(--text-primary)"
+                  >
+                    {bravuraChar(glyph)}
+                  </text>
+                );
+              })}
+              {isBeamed
+                ? renderChordNoteheadsOnly(
+                    x,
+                    pitchInfos.map((p) => ({ rowY: p.row.y, fill: p.fill })),
+                    note.duration
+                  )
+                : renderChordNoteheadsAndStem(
+                    x,
+                    pitchInfos.map((p) => ({ rowY: p.row.y, fill: p.fill })),
+                    note.duration
+                  )}
+              {showPlayingRing &&
+                playingNoteKey?.measureIndex === measureIndex &&
+                playingNoteKey?.startGrid === note.startGrid &&
+                pitchInfos.map((p) => (
+                  <circle
+                    key={`ring-${p.rowIdx}`}
+                    cx={x}
+                    cy={p.row.y}
+                    r={16}
+                    fill="none"
+                    stroke="var(--danger)"
+                    strokeWidth={2}
+                  />
+                ))}
+            </g>
+          );
+        })}
+        {beamGroups.map((group, i) => (
+          <g key={`beam-${i}`}>{renderBeamedGroup(group)}</g>
+        ))}
+      </>
+    );
+  }
+
+  // harmonies(コード記号)は音価もクリック編集も持たない、notesとは完全に独立した
+  // 表示専用レイヤー。root/kind/inversionからその場でボイシングを計算し、透明な
+  // 符頭(全音符型、符幹なし)とコード名を重ねて描画するだけで、notesの描画・
+  // クリック判定には一切関与しない。
+  function renderHarmoniesLayer(harmoniesToRender: Harmony[], xForOffset: (offsetGrid: number) => number) {
+    return (
+      <>
+        {harmoniesToRender.map((h, hi) => {
+          const x = xForOffset(h.offsetGrid);
+          const voiced = buildChordVoicing(h.root, h.kind, useFlats, h.inversion);
+          const label = `${names[h.root]}${CHORD_TYPE_LABELS[h.kind] ?? h.kind}`;
+          return (
+            <g key={`harmony-${h.offsetGrid}-${hi}`}>
+              <text
+                x={x}
+                y={CHORD_LABEL_Y}
+                fontSize={13}
+                fontFamily="-apple-system, 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif"
+                fontWeight="bold"
+                textAnchor="middle"
+                fill="var(--text-primary)"
+              >
+                {label}
+              </text>
+              {voiced.map(({ rowIdx }) =>
+                ledgerLineYsForRow(rows[rowIdx].y).map((ly) => (
+                  <line
+                    key={`hledger-${hi}-${rowIdx}-${ly}`}
+                    x1={x - 12}
+                    x2={x + 12}
+                    y1={ly}
+                    y2={ly}
+                    stroke="var(--border-strong)"
+                  />
+                ))
+              )}
+              {voiced.map(({ rowIdx, accidental }) => {
+                const glyph = accidentalDisplayGlyph(rowIdx, accidental);
+                if (!glyph) return null;
+                return (
+                  <text
+                    key={`hacc-${hi}-${rowIdx}`}
+                    x={x - 18}
+                    y={rows[rowIdx].y}
+                    fontSize={NOTE_ACCIDENTAL_FONT_SIZE}
+                    fontFamily="Bravura"
+                    textAnchor="middle"
+                    fill="var(--text-primary)"
+                  >
+                    {bravuraChar(glyph)}
+                  </text>
+                );
+              })}
+              {renderChordNoteheadsOnly(
+                x,
+                voiced.map(({ rowIdx, accidental }) => {
+                  const pc = (rows[rowIdx].pc + accidental + 12) % 12;
+                  const deg = degreeFor(pc, root);
+                  const [fill] = colorFor(DEGREE_ROLE[deg]);
+                  return { rowY: rows[rowIdx].y, fill, opacity: 0.35 };
+                }),
+                16 // noteheadWhole固定（harmonyは音価を持たないため）
+              )}
+            </g>
+          );
+        })}
+      </>
     );
   }
 
@@ -623,7 +1352,14 @@ export default function StaffToFretboard() {
         </button>
         <button
           id="measure-prev-btn"
-          onClick={() => setCurrentMeasureIndex((i) => Math.max(0, i - 1))}
+          onClick={() => {
+            setCurrentMeasureIndex((i) => Math.max(0, i - 1));
+            // ローカルなstartGridは小節をまたいで一意ではないため、選択状態は
+            // 小節移動のたびにリセットする（別の小節の音符が誤って選択中扱いに
+            // ならないようにする）。
+            setSelectedNoteKey(null);
+            setSelectedRowIdx(null);
+          }}
           disabled={currentMeasureIndex === 0}
         >
           ◀
@@ -633,10 +1369,43 @@ export default function StaffToFretboard() {
         </span>
         <button
           id="measure-next-btn"
-          onClick={() => setCurrentMeasureIndex((i) => Math.min(MEASURE_COUNT - 1, i + 1))}
+          onClick={() => {
+            setCurrentMeasureIndex((i) => Math.min(MEASURE_COUNT - 1, i + 1));
+            setSelectedNoteKey(null);
+            setSelectedRowIdx(null);
+          }}
           disabled={currentMeasureIndex === MEASURE_COUNT - 1}
         >
           ▶
+        </button>
+        <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>コード</label>
+        <select id="chord-root-select" value={chordRoot} onChange={(e) => setChordRoot(parseInt(e.target.value, 10))}>
+          {names.map((n, i) => (
+            <option key={i} value={i}>
+              {n}
+            </option>
+          ))}
+        </select>
+        <select id="chord-type-select" value={chordType} onChange={(e) => setChordType(e.target.value)}>
+          {Object.keys(CHORD_TYPES).map((type) => (
+            <option key={type} value={type}>
+              {CHORD_TYPE_LABELS[type]}
+            </option>
+          ))}
+        </select>
+        <select
+          id="chord-inversion-select"
+          value={chordInversion}
+          onChange={(e) => setChordInversion(parseInt(e.target.value, 10))}
+        >
+          {Array.from({ length: CHORD_TYPES[chordType].length }, (_, i) => i).map((inv) => (
+            <option key={inv} value={inv}>
+              {INVERSION_LABELS[inv]}
+            </option>
+          ))}
+        </select>
+        <button id="chord-place-btn" onClick={handlePlaceChord}>
+          和音を配置
         </button>
         <button id="play-btn" style={{ marginLeft: "auto" }} onClick={handlePlayClick}>
           {isPlaying ? "■ 停止" : "▶ Play"}
@@ -649,7 +1418,7 @@ export default function StaffToFretboard() {
       <div id="staff-wrap" style={{ overflowX: "auto" }}>
       <svg
         id="staff"
-        viewBox={`0 0 ${STAFF_VB_W} 280`}
+        viewBox={`0 0 ${STAFF_VB_W} ${STAFF_VB_H}`}
         style={{
           width: `${staffRenderedWidth}px`,
           height: `${STAFF_RENDER_HEIGHT_PX}px`,
@@ -676,8 +1445,8 @@ export default function StaffToFretboard() {
         })}
 
         <text
-          x={0}
-          y={rows[8].y /* G4線: SMuFL標準でgClefの原点はG4線に一致させる */}
+          x={CLEF_X}
+          y={rows[10].y /* G4線: SMuFL標準でgClefの原点はG4線に一致させる */}
           fontSize={BRAVURA_FONT_SIZE}
           fontFamily="Bravura"
           fill="var(--text-primary)"
@@ -687,14 +1456,17 @@ export default function StaffToFretboard() {
 
         {Array.from({ length: keySig.count }, (_, k) => {
           const row = rows[sigRows[k]];
-          const centerUnits = glyphBBoxCenterUnits(sigGlyphName);
-          const baselineY = baselineYForGlyphCenter(row.y, BRAVURA_FONT_SIZE, centerUnits);
+          // accidentalSharp/Flatは符頭・クレフと同様、原点(text baseline)がそのまま
+          // 対象の線・間に一致するようデザインされている。accidentalFlatは符幹が
+          // 上に長く伸びる非対称なグリフのため、bboxの中心（glyphBBoxCenterUnits）で
+          // 位置合わせすると符幹側に引っ張られて実際より低い位置にずれてしまう
+          // （実測で約1段分近くずれることを確認済み）。そのためy=row.yをそのまま使う。
           return (
             <text
               key={k}
               x={sigStartX + k * sigSpacing}
-              y={baselineY}
-              fontSize={BRAVURA_FONT_SIZE}
+              y={row.y}
+              fontSize={KEY_SIG_FONT_SIZE}
               fontFamily="Bravura"
               textAnchor="middle"
               fill="var(--text-primary)"
@@ -707,8 +1479,8 @@ export default function StaffToFretboard() {
         {(() => {
           const numGlyph = "timeSig" + timeSig.numerator;
           const denGlyph = "timeSig" + timeSig.denominator;
-          const numY = baselineYForGlyphCenter(rows[4].y, BRAVURA_FONT_SIZE, glyphBBoxCenterUnits(numGlyph));
-          const denY = baselineYForGlyphCenter(rows[8].y, BRAVURA_FONT_SIZE, glyphBBoxCenterUnits(denGlyph));
+          const numY = baselineYForGlyphCenter(rows[6].y, BRAVURA_FONT_SIZE, glyphBBoxCenterUnits(numGlyph));
+          const denY = baselineYForGlyphCenter(rows[10].y, BRAVURA_FONT_SIZE, glyphBBoxCenterUnits(denGlyph));
           return (
             <>
               <text
@@ -736,7 +1508,7 @@ export default function StaffToFretboard() {
         })()}
 
         {(() => {
-          const lineX = xForGrid(measureStartGrid + gridsPerMeasure);
+          const lineX = xForGrid(gridsPerMeasure);
           return (
             <line
               x1={lineX}
@@ -752,8 +1524,7 @@ export default function StaffToFretboard() {
         {/* 拍の位置を示す補助線（小節線とは重ならない、表示中の小節内の拍区切りのみ）。
             見た目だけのガイドで、クリック判定・配置ロジックには一切関与しない。 */}
         {Array.from({ length: timeSig.numerator - 1 }, (_, b) => {
-          const beatGrid = measureStartGrid + (b + 1) * gridsPerBeat;
-          const lineX = xForGrid(beatGrid);
+          const lineX = xForGrid((b + 1) * gridsPerBeat);
           return (
             <line
               key={b}
@@ -768,59 +1539,42 @@ export default function StaffToFretboard() {
           );
         })}
 
-        {notes
-          .filter((note) => note.startGrid >= measureStartGrid && note.startGrid < measureStartGrid + gridsPerMeasure)
-          .map((note) => {
-          const x = displayXForNote(note.startGrid);
+        {/* notes(メロディ)とharmonies(コード)は完全に独立したレイヤーとして重ねて
+            描画するだけで、互いの描画・データには一切依存しない。 */}
+        {renderHarmoniesLayer(harmonies, displayXForNote)}
+        {renderNotesWithBeams(notes, displayXForNote, true, currentMeasureIndex)}
 
-          if (note.isRest) {
-            return (
-              <g key={note.startGrid}>
-                {renderRestGlyph(x, note.duration, "var(--text-secondary)")}
-              </g>
-            );
-          }
-
-          const row = rows[note.rowIdx as number];
-          const acc = note.accidental;
-          const pc = (row.pc + acc + 12) % 12;
-          const deg = degreeFor(pc, root);
-          const [fill] = colorFor(DEGREE_ROLE[deg]);
-          const showLedger = row.y <= STAFF_TOP - 10 || row.y >= STAFF_TOP + 100;
+        {/* 次の小節の頭を、小節線の向こうに半透明・小さめでプレビュー表示する。
+            表示のみでクリック・編集の対象にはしない（pointerEvents="none"、
+            handleStaffClick側でも小節線より右のクリックは無視する）。 */}
+        {(() => {
+          const nextMeasure = measures[currentMeasureIndex + 1];
+          const previewNotes = nextMeasure
+            ? nextMeasure.notes.filter((note) => note.startGrid * GRID_UNIT_WIDTH < PREVIEW_WIDTH_PX)
+            : [];
+          const previewHarmonies = nextMeasure
+            ? nextMeasure.harmonies.filter((h) => h.offsetGrid * GRID_UNIT_WIDTH < PREVIEW_WIDTH_PX)
+            : [];
+          if (previewNotes.length === 0 && previewHarmonies.length === 0) return null;
+          const anchorX = barlineX;
+          const anchorY = MIDDLE_LINE_Y;
           return (
-            <g key={note.startGrid}>
-              {showLedger && (
-                <line x1={x - 12} x2={x + 12} y1={row.y} y2={row.y} stroke="var(--border-strong)" />
-              )}
-              {acc !== 0 && (
-                <text
-                  x={x - 22}
-                  y={baselineYForGlyphCenter(
-                    row.y,
-                    BRAVURA_FONT_SIZE,
-                    glyphBBoxCenterUnits(acc === 1 ? "accidentalSharp" : "accidentalFlat")
-                  )}
-                  fontSize={BRAVURA_FONT_SIZE}
-                  fontFamily="Bravura"
-                  textAnchor="middle"
-                  fill="var(--text-primary)"
-                >
-                  {bravuraChar(acc === 1 ? "accidentalSharp" : "accidentalFlat")}
-                </text>
-              )}
-              {renderNoteGlyph(x, row.y, note.duration, fill)}
-              {playingNoteKey === note.startGrid && (
-                <circle cx={x} cy={row.y} r={16} fill="none" stroke="var(--danger)" strokeWidth={2} />
-              )}
+            <g
+              opacity={PREVIEW_OPACITY}
+              pointerEvents="none"
+              transform={`translate(${anchorX},${anchorY}) scale(${PREVIEW_SCALE}) translate(${-anchorX},${-anchorY})`}
+            >
+              {renderHarmoniesLayer(previewHarmonies, previewXForGrid)}
+              {renderNotesWithBeams(previewNotes, previewXForGrid, false, currentMeasureIndex + 1)}
             </g>
           );
-        })}
+        })()}
 
         <rect
           x={LEFT - 40}
           y={2}
-          width={STAFF_VB_W - (LEFT - 40) - 10}
-          height={276}
+          width={barlineX - (LEFT - 40)}
+          height={STAFF_VB_H - 4}
           fill="transparent"
           style={{ pointerEvents: "auto", touchAction: "manipulation" }}
         />
@@ -840,11 +1594,10 @@ export default function StaffToFretboard() {
       <div style={{ margin: "0 0 1.5rem", height: "72px", overflowX: "auto" }}>
       <div style={{ position: "relative", width: `${staffRenderedWidth}px`, height: "72px" }}>
         {(() => {
+          // notesは既に表示中の小節(measures[currentMeasureIndex].notes)にスコープ
+          // されているため、この中で見つかった時点で表示中の小節の音符だと確定する。
           const selectedNote = notes.find((n) => n.startGrid === selectedNoteKey);
           if (!selectedNote) return null;
-          if (selectedNote.startGrid < measureStartGrid || selectedNote.startGrid >= measureStartGrid + gridsPerMeasure) {
-            return null;
-          }
           const leftPercent = (displayXForNote(selectedNote.startGrid) / STAFF_VB_W) * 100;
           const durationLabel =
             selectedNote.duration === 16
@@ -857,6 +1610,12 @@ export default function StaffToFretboard() {
                     ? "8分"
                     : "16分";
           const btnStyle = { fontSize: "11px", padding: "0 4px", width: "34px", height: "20px", lineHeight: "1" };
+          // 和音の場合、臨時記号の操作対象はselectedRowIdx（選択中のピッチ）。
+          // 未選択・和音外なら先頭の音を対象にする。
+          const targetRowIdx =
+            selectedRowIdx !== null && selectedNote.rowIdxList.includes(selectedRowIdx)
+              ? selectedRowIdx
+              : (selectedNote.rowIdxList[0] ?? null);
           return (
             <div
               style={{
@@ -869,16 +1628,16 @@ export default function StaffToFretboard() {
                 gap: "1px",
               }}
             >
-              {!selectedNote.isRest && (
-                <button style={btnStyle} onClick={() => pressSharp(selectedNote.startGrid)}>
+              {!selectedNote.isRest && targetRowIdx !== null && (
+                <button style={btnStyle} onClick={() => pressSharp(selectedNote.startGrid, targetRowIdx)}>
                   ▲
                 </button>
               )}
               <button style={btnStyle} onClick={() => cycleDuration(selectedNote.startGrid)}>
                 {durationLabel}
               </button>
-              {!selectedNote.isRest && (
-                <button style={btnStyle} onClick={() => pressFlat(selectedNote.startGrid)}>
+              {!selectedNote.isRest && targetRowIdx !== null && (
+                <button style={btnStyle} onClick={() => pressFlat(selectedNote.startGrid, targetRowIdx)}>
                   ▼
                 </button>
               )}
@@ -956,7 +1715,7 @@ export default function StaffToFretboard() {
                   const x = fbLeft + (f === 0 ? 0 : f * fretW - fretW / 2);
                   const deg = degreeFor(pc, root);
                   const [fill] = colorFor(DEGREE_ROLE[deg]);
-                  const isPlaying = playingAbsPitch === absPitch;
+                  const isPlaying = playingAbsPitches.has(absPitch);
                   return (
                     <g key={f}>
                       {isPlaying && (
