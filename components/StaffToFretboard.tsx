@@ -679,10 +679,6 @@ export default function StaffToFretboard() {
     let rowIdx = Math.round((y - rows[0].y) / 10);
     rowIdx = Math.max(0, Math.min(rows.length - 1, rowIdx));
 
-    // 「和音を配置」の配置先カーソルは、noteの配置・削除ロジックの結果とは無関係に
-    // 常に実際にクリックされたグリッド位置を指す。
-    setChordTargetGrid(grid);
-
     const covering = notes.find((n) => grid >= n.startGrid && grid < n.startGrid + n.duration);
     if (covering) {
       if (restMode) {
@@ -767,6 +763,19 @@ export default function StaffToFretboard() {
     setSelectedRowIdx(restMode ? null : rowIdx);
   }
 
+  // 「和音を配置」専用のタイムライン行のクリック処理。座標系はhandleStaffClickと
+  // 共有する(LEFT・GRID_UNIT_WIDTH・gridsPerMeasure)ため、五線譜本体と同じx位置が
+  // 同じグリッドを指す。chordTargetGridを更新するだけで、notesには一切触れない。
+  function handleChordTimelineClick(e: React.MouseEvent<SVGSVGElement>) {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (STAFF_VB_W / rect.width);
+    if (x > barlineX) return;
+    let grid = Math.round((x - LEFT) / GRID_UNIT_WIDTH);
+    grid = Math.max(0, Math.min(gridsPerMeasure - 1, grid));
+    setChordTargetGrid(grid);
+  }
+
   // ▲: 選択中のピッチが#でなければ#にする、既に#ならナチュラルに戻す。
   function pressSharp(startGrid: number, targetRowIdx: number) {
     updateMeasureNotes(currentMeasureIndex, (ns) =>
@@ -790,9 +799,10 @@ export default function StaffToFretboard() {
   }
 
   // 「和音を配置」は表示中の小節のharmoniesだけを対象にする。notesには一切触れない。
-  // 配置先は、直前に五線譜をクリックした位置(chordTargetGrid、五線譜上の▼マーカーで
-  // 示される)。同じoffsetGridに既にharmonyがあれば置き換え、なければ追加するので、
-  // 異なるoffsetGridに複数のharmonyを積み上げていける。
+  // 配置先は、専用のコード配置タイムライン行でクリックした位置(chordTargetGrid、
+  // その行の▼マーカーで示される)。五線譜本体のクリックはnotesの配置・削除だけを
+  // 行い、chordTargetGridには一切影響しない。同じoffsetGridに既にharmonyがあれば
+  // 置き換え、なければ追加するので、異なるoffsetGridに複数のharmonyを積み上げていける。
   function handlePlaceChord() {
     const offsetGrid = chordTargetGrid;
     const harmony: Harmony = { offsetGrid, root: chordRoot, kind: chordType, inversion: chordInversion };
@@ -1627,20 +1637,6 @@ export default function StaffToFretboard() {
           );
         })}
 
-        {/* 「和音を配置」の配置予定位置を示すインジケーター。表示のみで、
-            クリック判定には関与しない（handleStaffClick側で常に最新のクリック
-            位置に更新される）。 */}
-        <text
-          x={displayXForNote(chordTargetGrid)}
-          y={STAFF_TOP - 42}
-          textAnchor="middle"
-          fontSize={13}
-          fill="var(--accent)"
-          pointerEvents="none"
-        >
-          ▼
-        </text>
-
         {/* notes(メロディ)とharmonies(コード)は完全に独立したレイヤーとして重ねて
             描画するだけで、互いの描画・データには一切依存しない。 */}
         {renderHarmoniesLayer(harmonies, displayXForNote)}
@@ -1689,6 +1685,38 @@ export default function StaffToFretboard() {
           fill="var(--danger)"
           opacity={fullFeedback ? 0.2 : 0}
           style={{ transition: "opacity 0.25s", pointerEvents: "none" }}
+        />
+      </svg>
+
+      {/* 「和音を配置」専用のクリック可能なタイムライン行。五線譜本体
+          (#staff)とは完全に別のクリックハンドラを持ち、notesには一切
+          触れずchordTargetGridだけを更新する。#staff-wrapと同じ
+          overflowXコンテナ内に置くことで、横スクロールが常に連動する。
+          座標系(LEFT・GRID_UNIT_WIDTH・STAFF_VB_W)を共有しているため、
+          x位置は五線譜本体とぴったり揃う。 */}
+      <div style={{ fontSize: "11px", color: "var(--text-secondary)", margin: "4px 0 2px" }}>
+        コードを配置する位置をクリック
+      </div>
+      <svg
+        id="chord-timeline"
+        viewBox={`0 0 ${STAFF_VB_W} 26`}
+        preserveAspectRatio="none"
+        style={{ width: `${staffRenderedWidth}px`, height: "24px", display: "block", cursor: "pointer" }}
+        onClick={handleChordTimelineClick}
+      >
+        <rect
+          x={LEFT}
+          y={5}
+          width={barlineX - LEFT}
+          height={12}
+          rx={3}
+          fill="var(--surface-0)"
+          stroke="var(--border)"
+        />
+        {/* 配置予定位置(chordTargetGrid)を示す三角マーカー。 */}
+        <polygon
+          points={`${displayXForNote(chordTargetGrid) - 6},1 ${displayXForNote(chordTargetGrid) + 6},1 ${displayXForNote(chordTargetGrid)},13`}
+          fill="var(--accent)"
         />
       </svg>
       </div>
