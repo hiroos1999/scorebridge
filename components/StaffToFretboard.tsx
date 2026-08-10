@@ -330,7 +330,9 @@ const TIME_SIG_OPTIONS: TimeSignature[] = [
 // 1グリッドの幅に応じて自然に伸びるようにするための基準高さ(px)。
 const STAFF_RENDER_HEIGHT_PX = 296;
 const NOTE_AREA_MARGIN_RIGHT = 20;
-const MEASURE_COUNT = 2;
+// 小節数はもう固定ではなく、measures配列の長さ（可変長）で決まる。
+// これは起動時・「クリア」時の初期小節数としてのみ使う。
+const INITIAL_MEASURE_COUNT = 2;
 
 // 小節線の向こうに次の小節の頭をプレビュー表示するための設定。
 // 拍子によってGRID_UNIT_WIDTHが変わっても表示幅全体(STAFF_VB_W)は
@@ -401,11 +403,17 @@ export default function StaffToFretboard() {
   const [timeSig, setTimeSig] = useState<TimeSignature>({ numerator: 4, denominator: 4 });
   // メロディ(notes)とコードシンボル(harmonies)は、MusicXMLのmeasure要素に倣い
   // 小節ごとに独立したデータとして持つ。互いの追加・削除・編集は一切影響しない。
+  // measures配列は固定長ではなく、＋/削除ボタンで自由に伸縮する可変長配列。
   const [measures, setMeasures] = useState<Measure[]>(() =>
-    Array.from({ length: MEASURE_COUNT }, () => ({ notes: [], harmonies: [] }))
+    Array.from({ length: INITIAL_MEASURE_COUNT }, () => ({ notes: [], harmonies: [] }))
   );
   const [selectedNoteKey, setSelectedNoteKey] = useState<number | null>(null);
   const [selectedRowIdx, setSelectedRowIdx] = useState<number | null>(null);
+  // 「和音を配置」が次にどのoffsetGridへ置かれるかを示すカーソル。notesの配置・
+  // 削除ロジックとは無関係に、五線譜クリックのたびに実際にクリックされたグリッド
+  // 位置がそのまま入る（空きエリアクリックでnoteが末尾に自動追加される場合も、
+  // クリックした位置自体はここに反映される）。
+  const [chordTargetGrid, setChordTargetGrid] = useState(0);
   // 新規配置する音符・休符のデフォルト音価。音価切り替えボタンで変更した
   // 音価を次の新規配置にも引き継ぐ（起動時・クリア後はDEFAULT_DURATIONに戻す）。
   const [defaultDuration, setDefaultDuration] = useState(DEFAULT_DURATION);
@@ -430,6 +438,12 @@ export default function StaffToFretboard() {
   const [isPlaying, setIsPlaying] = useState(false);
   // ローカルなstartGridは小節をまたいで一意ではないため、どの小節の音符かも保持する。
   const [playingNoteKey, setPlayingNoteKey] = useState<{ measureIndex: number; startGrid: number } | null>(null);
+  // 現在鳴っているharmony(コード)。noteのイベントが挟まっても途切れず、次のharmony
+  // イベントが鳴るまで（＝そのコードの区間が続く間）保持される。指板の半透明
+  // ハイライトを「今鳴っているコード」だけに絞り込むために使う。
+  const [playingHarmonyKey, setPlayingHarmonyKey] = useState<{ measureIndex: number; offsetGrid: number } | null>(
+    null
+  );
   const audioContextRef = useRef<AudioContext | null>(null);
   const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -442,6 +456,7 @@ export default function StaffToFretboard() {
     clearScheduledPlayback();
     setIsPlaying(false);
     setPlayingNoteKey(null);
+    setPlayingHarmonyKey(null);
   }
 
   useEffect(() => {
@@ -505,11 +520,14 @@ export default function StaffToFretboard() {
         const toneSec = durationToMs(note.duration) / 1000;
         events.push({ atMs, endMs: atMs + toneSec * 1000, measureIndex, kind: "note", note });
       });
-      // harmonyは音価を持たないため、そのoffsetGridから小節の終わりまで鳴らす
-      // （「小節の間、コード音を鳴らす」の簡易実装）。
-      m.harmonies.forEach((harmony) => {
+      // harmonyは音価を持たないため、そのoffsetGridから「次のharmonyのoffsetGrid
+      // （無ければ小節の終わり）」までを自分の区間として鳴らす。1小節に複数の
+      // コードを置いた場合、それぞれが自分の区間だけ鳴る。
+      const sortedHarmonies = [...m.harmonies].sort((a, b) => a.offsetGrid - b.offsetGrid);
+      sortedHarmonies.forEach((harmony, hi) => {
+        const nextOffset = sortedHarmonies[hi + 1]?.offsetGrid ?? gridsPerMeasure;
         const atMs = measureStartMs + gridToMs(harmony.offsetGrid);
-        const toneSec = gridToMs(gridsPerMeasure - harmony.offsetGrid) / 1000;
+        const toneSec = gridToMs(nextOffset - harmony.offsetGrid) / 1000;
         events.push({ atMs, endMs: atMs + toneSec * 1000, measureIndex, kind: "harmony", harmony });
       });
     });
@@ -540,6 +558,7 @@ export default function StaffToFretboard() {
             setPlayingNoteKey(null);
           }
         } else {
+          setPlayingHarmonyKey({ measureIndex: ev.measureIndex, offsetGrid: ev.harmony.offsetGrid });
           const voiced = buildChordVoicing(ev.harmony.root, ev.harmony.kind, useFlats, ev.harmony.inversion);
           voiced.forEach(({ rowIdx, accidental }) => {
             const absPitch = rows[rowIdx].octave * 12 + rows[rowIdx].pc + accidental;
@@ -553,6 +572,7 @@ export default function StaffToFretboard() {
     const endTimeoutId = setTimeout(() => {
       setIsPlaying(false);
       setPlayingNoteKey(null);
+      setPlayingHarmonyKey(null);
     }, overallEndMs);
     timeoutIdsRef.current.push(endTimeoutId);
   }
@@ -631,11 +651,17 @@ export default function StaffToFretboard() {
   function handleTimeSigChange(numerator: number, denominator: number) {
     const newGridsPerMeasure = numerator * (16 / denominator);
     setTimeSig({ numerator, denominator });
-    // harmonyはoffsetGrid=0のみサポートのため、拍子変更で無効になることはない。
-    // notesは小節の長さが変わることで収まらなくなった音符だけを取り除く。
+    // 小節の長さが変わることで収まらなくなったnote・harmonyだけを取り除く
+    // （harmonyは今や小節内の任意のoffsetGridを取り得るため、拍子を縮めると
+    // 無効になるものが出てくる）。
     setMeasures((prev) =>
-      prev.map((m) => ({ ...m, notes: m.notes.filter((n) => n.startGrid + n.duration <= newGridsPerMeasure) }))
+      prev.map((m) => ({
+        ...m,
+        notes: m.notes.filter((n) => n.startGrid + n.duration <= newGridsPerMeasure),
+        harmonies: m.harmonies.filter((h) => h.offsetGrid < newGridsPerMeasure),
+      }))
     );
+    setChordTargetGrid((g) => Math.min(g, newGridsPerMeasure - 1));
   }
 
   // 五線譜のクリックによる配置・削除はnotes（メロディ）だけを対象にする。
@@ -652,6 +678,10 @@ export default function StaffToFretboard() {
     grid = Math.max(0, Math.min(gridsPerMeasure - 1, grid));
     let rowIdx = Math.round((y - rows[0].y) / 10);
     rowIdx = Math.max(0, Math.min(rows.length - 1, rowIdx));
+
+    // 「和音を配置」の配置先カーソルは、noteの配置・削除ロジックの結果とは無関係に
+    // 常に実際にクリックされたグリッド位置を指す。
+    setChordTargetGrid(grid);
 
     const covering = notes.find((n) => grid >= n.startGrid && grid < n.startGrid + n.duration);
     if (covering) {
@@ -760,10 +790,11 @@ export default function StaffToFretboard() {
   }
 
   // 「和音を配置」は表示中の小節のharmoniesだけを対象にする。notesには一切触れない。
-  // 今はoffsetGrid=0のみサポートなので、同じ小節に既にharmonyがあれば置き換え、
-  // なければ追加する（同じ拍に和音記号が2つ重なって表示される事故を防ぐ）。
+  // 配置先は、直前に五線譜をクリックした位置(chordTargetGrid、五線譜上の▼マーカーで
+  // 示される)。同じoffsetGridに既にharmonyがあれば置き換え、なければ追加するので、
+  // 異なるoffsetGridに複数のharmonyを積み上げていける。
   function handlePlaceChord() {
-    const offsetGrid = 0;
+    const offsetGrid = chordTargetGrid;
     const harmony: Harmony = { offsetGrid, root: chordRoot, kind: chordType, inversion: chordInversion };
     updateMeasureHarmonies(currentMeasureIndex, (hs) => [
       ...hs.filter((h) => h.offsetGrid !== offsetGrid),
@@ -794,12 +825,34 @@ export default function StaffToFretboard() {
   }
 
   // 全小節のnotes・harmoniesを両方まとめてリセットする（従来の「クリア」ボタンの
-  // 挙動を、独立した2つのデータに対しても踏襲する）。
+  // 挙動を、独立した2つのデータに対しても踏襲する）。ユーザーが＋/削除で組み立てた
+  // 小節数そのものは維持し、中身だけを空にする（小節構成をクリアで失わせない）。
   function handleClear() {
-    setMeasures(Array.from({ length: MEASURE_COUNT }, () => ({ notes: [], harmonies: [] })));
+    setMeasures((prev) => prev.map(() => ({ notes: [], harmonies: [] })));
     setSelectedNoteKey(null);
     setSelectedRowIdx(null);
     setDefaultDuration(DEFAULT_DURATION);
+  }
+
+  // 末尾に空の小節を1つ追加し、追加した小節に表示を移動する。
+  function handleAddMeasure() {
+    setMeasures((prev) => [...prev, { notes: [], harmonies: [] }]);
+    setCurrentMeasureIndex(measures.length); // 追加後の末尾インデックス
+    setSelectedNoteKey(null);
+    setSelectedRowIdx(null);
+    setChordTargetGrid(0);
+  }
+
+  // 表示中の小節を削除する。最低1小節は必ず残す。削除後は、削除した位置の
+  // 1つ前の小節（先頭を削除した場合は新しい先頭=0）を表示する。
+  function handleDeleteMeasure() {
+    if (measures.length <= 1) return;
+    const deletedIndex = currentMeasureIndex;
+    setMeasures((prev) => prev.filter((_, i) => i !== deletedIndex));
+    setCurrentMeasureIndex(Math.max(0, deletedIndex - 1));
+    setSelectedNoteKey(null);
+    setSelectedRowIdx(null);
+    setChordTargetGrid(0);
   }
 
   // オクターブを含めた実際の音の高さ（絶対ピッチ = octave*12 + pc + 臨時記号）で
@@ -808,7 +861,9 @@ export default function StaffToFretboard() {
   // ギター（移調楽器）の記譜慣習により、実際に鳴る音は記譜より1オクターブ低いため、
   // 指板とのマッチング判定にのみ -12 半音する（度数ラベルや調号などの表示には影響させない）。
   const GUITAR_SOUNDING_OCTAVE_OFFSET = -12;
-  // 指板に表示するのはメロディ(notes)のピッチのみ。harmoniesは指板ハイライトの対象外。
+  // 指板の「実際に配置されたメロディ音符」用の通常濃度マーカーは、これまで通り
+  // notesの厳密な絶対音高（オクターブまで含む）だけを対象にする。harmoniesは
+  // 別途harmonyPitchClasses(下記)で半透明マーカーとして重ねて表示する。
   const activePitches = new Set(
     measures
       .flatMap((m) => m.notes)
@@ -819,6 +874,26 @@ export default function StaffToFretboard() {
             rows[rowIdx].octave * 12 + rows[rowIdx].pc + (n.accidentals[rowIdx] ?? 0) + GUITAR_SOUNDING_OCTAVE_OFFSET
         )
       )
+  );
+  // 表示中の小節に配置されたharmony(コード)の構成音を、指板上の「全ポジション」に
+  // 半透明マーカーで示すためのピッチクラス集合。メロディ音符と違って特定の
+  // オクターブ（絶対音高）には結びつけず、同じ音名なら弦・フレットを問わず
+  // 該当させる（コードの押さえ方を探す用途のため）。転回形はベース音の
+  // 選び方であって構成音の集合自体は変わらないため、ここでは考慮しない。
+  // harmoniesは既にmeasures[currentMeasureIndex].harmoniesにスコープ済みなので、
+  // 小節を移動すればこの集合も自動的に切り替わる。
+  // 再生中は「今鳴っているコード」だけに絞り込み、1小節に複数コードがある場合でも
+  // タイミングに応じてハイライトが切り替わるようにする。非再生時（静止画面）は
+  // どのタイミングが「今」かが一意に決まらないため、これまで通り表示中の小節の
+  // 全harmonyをまとめて示す。
+  const playingHarmonyInCurrentMeasure =
+    isPlaying && playingHarmonyKey?.measureIndex === currentMeasureIndex
+      ? harmonies.find((h) => h.offsetGrid === playingHarmonyKey.offsetGrid)
+      : undefined;
+  const harmonyPitchClasses = new Set(
+    (isPlaying ? (playingHarmonyInCurrentMeasure ? [playingHarmonyInCurrentMeasure] : []) : harmonies).flatMap((h) =>
+      (CHORD_TYPES[h.kind] ?? []).map((interval) => (h.root + interval) % 12)
+    )
   );
   // 再生中の音符（和音の場合は全ての構成音）の実際の音の高さ。指板側のハイライトに使う。
   // ローカルなstartGridは小節をまたいで一意ではないため、measureIndexも一致させる。
@@ -1359,24 +1434,37 @@ export default function StaffToFretboard() {
             // ならないようにする）。
             setSelectedNoteKey(null);
             setSelectedRowIdx(null);
+            setChordTargetGrid(0);
           }}
           disabled={currentMeasureIndex === 0}
         >
           ◀
         </button>
         <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
-          {currentMeasureIndex + 1}/{MEASURE_COUNT}小節目
+          {currentMeasureIndex + 1}/{measures.length}小節目
         </span>
         <button
           id="measure-next-btn"
           onClick={() => {
-            setCurrentMeasureIndex((i) => Math.min(MEASURE_COUNT - 1, i + 1));
+            setCurrentMeasureIndex((i) => Math.min(measures.length - 1, i + 1));
             setSelectedNoteKey(null);
             setSelectedRowIdx(null);
+            setChordTargetGrid(0);
           }}
-          disabled={currentMeasureIndex === MEASURE_COUNT - 1}
+          disabled={currentMeasureIndex === measures.length - 1}
         >
           ▶
+        </button>
+        <button id="measure-add-btn" onClick={handleAddMeasure} title="末尾に小節を追加">
+          ＋
+        </button>
+        <button
+          id="measure-delete-btn"
+          onClick={handleDeleteMeasure}
+          disabled={measures.length <= 1}
+          title="表示中の小節を削除"
+        >
+          削除
         </button>
         <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>コード</label>
         <select id="chord-root-select" value={chordRoot} onChange={(e) => setChordRoot(parseInt(e.target.value, 10))}>
@@ -1538,6 +1626,20 @@ export default function StaffToFretboard() {
             />
           );
         })}
+
+        {/* 「和音を配置」の配置予定位置を示すインジケーター。表示のみで、
+            クリック判定には関与しない（handleStaffClick側で常に最新のクリック
+            位置に更新される）。 */}
+        <text
+          x={displayXForNote(chordTargetGrid)}
+          y={STAFF_TOP - 42}
+          textAnchor="middle"
+          fontSize={13}
+          fill="var(--accent)"
+          pointerEvents="none"
+        >
+          ▼
+        </text>
 
         {/* notes(メロディ)とharmonies(コード)は完全に独立したレイヤーとして重ねて
             描画するだけで、互いの描画・データには一切依存しない。 */}
@@ -1710,8 +1812,12 @@ export default function StaffToFretboard() {
               <g key={sIdx}>
                 {Array.from({ length: FRETS + 1 }, (_, f) => {
                   const absPitch = st.octave * 12 + st.open + f;
-                  if (!activePitches.has(absPitch)) return null;
                   const pc = (st.open + f) % 12;
+                  const isMelody = activePitches.has(absPitch);
+                  // 同じポジションが実際のメロディ音符でもある場合は、通常濃度の
+                  // メロディ表示を優先し、半透明のコードマーカーは重ねて描かない。
+                  const isHarmonyTone = !isMelody && harmonyPitchClasses.has(pc);
+                  if (!isMelody && !isHarmonyTone) return null;
                   const x = fbLeft + (f === 0 ? 0 : f * fretW - fretW / 2);
                   const deg = degreeFor(pc, root);
                   const [fill] = colorFor(DEGREE_ROLE[deg]);
@@ -1729,13 +1835,20 @@ export default function StaffToFretboard() {
                           opacity={0.85}
                         />
                       )}
-                      <circle cx={x} cy={y} r={isPlaying ? 14 : 12} style={{ fill }} />
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={isPlaying ? 14 : 12}
+                        style={{ fill }}
+                        opacity={isHarmonyTone ? 0.35 : 1}
+                      />
                       <text
                         x={x}
                         y={y + 4}
                         textAnchor="middle"
                         fontSize={10}
                         fontWeight="bold"
+                        opacity={isHarmonyTone ? 0.7 : 1}
                         style={{
                           fill: "#ffffff",
                           stroke: "rgba(0,0,0,0.55)",
