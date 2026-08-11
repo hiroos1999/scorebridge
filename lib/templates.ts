@@ -23,6 +23,16 @@ export type Template = {
 function note(startGrid: number, duration: number, rowIdx: number, accidental = 0): Note {
   return { startGrid, duration, isRest: false, rowIdxList: [rowIdx], accidentals: { [rowIdx]: accidental } };
 }
+function rest(startGrid: number, duration: number): Note {
+  return { startGrid, duration, isRest: true, rowIdxList: [], accidentals: {} };
+}
+
+// harmoniesはbuildStandardAの生成結果をそのまま流用し、notesだけを実採譜データに
+// 差し替えるためのヘルパー（4曲: 'S Wonderful/I Got Rhythm/But Not for Me/
+// Tea for Twoのharmoniesを一切変更しないため）。
+function withNotes(measures: Measure[], notesByMeasure: Note[][]): Measure[] {
+  return measures.map((m, i) => ({ notes: notesByMeasure[i], harmonies: m.harmonies }));
+}
 
 // ピッチクラス（NOTE_NAMES_FLAT/SHARPと同じ並び: C=0, Db/C#=1, D=2, Eb/D#=3,
 // E=4, F=5, Gb/F#=6, G=7, Ab/G#=8, A=9, Bb/A#=10, B=11）。
@@ -31,7 +41,10 @@ const PC = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb:
 // ---- 以下、9曲分のテンプレートを機械的に生成するための共通ヘルパー ----
 // 手作業での書き写しによる音の誤りを避けるため、「各小節のコード構成音を
 // 直前の音に近い段でアルペジオ化する」処理を関数化し、9曲すべてで共用する。
-// （'S Wonderfulは検証済みのため、上のS_WONDERFUL_Aは手書きのまま変更しない。）
+// （'S Wonderful/I Got Rhythm/But Not for Me/Tea for Twoの4曲は、
+// ユーザーが目視で書き出した実際のメロディ（音名・音価）をnote()/rest()で
+// 手書き変換したものに差し替え済み（harmoniesは以下の生成ロジックのまま）。
+// 残り5曲は引き続きコードトーンのアルペジオ機械生成。）
 
 // rows配列（StaffToFretboard内）のpc並びの複製。rowIdx 0..19 = C6,B5,A5,G5,F5,
 // E5,D5,C5,B4,A4,G4,F4,E4,D4,C4,B3,A3,G3,F3,E3
@@ -135,47 +148,47 @@ const START_ROW = 10;
 // 各小節のコードトーンをアルペジオ化しただけのシンプルな練習フレーズとして
 // 新たに作成したもの（4分音符中心、最終小節のみ全音符でトニックに着地）。
 const S_WONDERFUL_A: Measure[] = [
-  // 1. Ebmaj7 — Eb4-G4-Bb4-D5 (上行アルペジオ)
+  // 1. Bb4(付点8分) C5(16分) Eb5(タイでのばし、小節末まで=付点2分相当)
   {
-    notes: [note(0, 4, 12, -1), note(4, 4, 10), note(8, 4, 8, -1), note(12, 4, 6)],
+    notes: [note(0, 3, 8, -1), note(3, 1, 7), note(4, 12, 5, -1)],
     harmonies: [{ offsetGrid: 0, root: PC.Eb, kind: "maj7", inversion: 0 }],
   },
-  // 2. Cm7 — Bb4-G4-Eb4-C4 (下行アルペジオ)
+  // 2. D5(付点8分) Eb5(16分) F5(タイでのばし、小節末まで=付点2分相当)
   {
-    notes: [note(0, 4, 8, -1), note(4, 4, 10), note(8, 4, 12, -1), note(12, 4, 14)],
+    notes: [note(0, 3, 6), note(3, 1, 5, -1), note(4, 12, 4)],
     harmonies: [{ offsetGrid: 0, root: PC.C, kind: "m7", inversion: 0 }],
   },
-  // 3. Fm7 — Eb4-F4-Ab4-C5 (上行アルペジオ)
+  // 3. C5(付点8分) D5(16分) F5(タイでのばし、小節末まで=付点2分相当)
   {
-    notes: [note(0, 4, 12, -1), note(4, 4, 11), note(8, 4, 9, -1), note(12, 4, 7)],
+    notes: [note(0, 3, 7), note(3, 1, 6), note(4, 12, 4)],
     harmonies: [{ offsetGrid: 0, root: PC.F, kind: "m7", inversion: 0 }],
   },
-  // 4. Bb7 — D5-C5-Bb4-Ab4 (下行アルペジオ、次の小節のEbへ滑らかに接続)
+  // 4. Eb5(付点4分) D5(8分) C5(付点4分) Bb4(8分、ちょうど小節末まで)
   {
-    notes: [note(0, 4, 6), note(4, 4, 7), note(8, 4, 8, -1), note(12, 4, 9, -1)],
+    notes: [note(0, 6, 5, -1), note(6, 2, 6), note(8, 6, 7), note(14, 2, 8, -1)],
     harmonies: [{ offsetGrid: 0, root: PC.Bb, kind: "7", inversion: 0 }],
   },
-  // 5. Ebmaj7 — Eb4-Bb4-G4-D5 (構成音の並びを変えて変化を付ける)
+  // 5. 1小節目と同じ音型
   {
-    notes: [note(0, 4, 12, -1), note(4, 4, 8, -1), note(8, 4, 10), note(12, 4, 6)],
+    notes: [note(0, 3, 8, -1), note(3, 1, 7), note(4, 12, 5, -1)],
     harmonies: [{ offsetGrid: 0, root: PC.Eb, kind: "maj7", inversion: 0 }],
   },
-  // 6. Cm7 — Eb4-G4-Bb4-C5 (上行アルペジオ)
+  // 6. 2小節目と同じ音型
   {
-    notes: [note(0, 4, 12, -1), note(4, 4, 10), note(8, 4, 8, -1), note(12, 4, 7)],
+    notes: [note(0, 3, 6), note(3, 1, 5, -1), note(4, 12, 4)],
     harmonies: [{ offsetGrid: 0, root: PC.C, kind: "m7", inversion: 0 }],
   },
-  // 7. Fm7(1-2拍) → Bb7(3-4拍) — 1小節に2つのコード。メロディはF4-Ab4-Bb4-Ab4
+  // 7. C5(付点8分) D5(16分) F5(2分、タイなし) + 4分休符で終止
   {
-    notes: [note(0, 4, 11), note(4, 4, 9, -1), note(8, 4, 8, -1), note(12, 4, 9, -1)],
+    notes: [note(0, 3, 7), note(3, 1, 6), note(4, 8, 4), rest(12, 4)],
     harmonies: [
       { offsetGrid: 0, root: PC.F, kind: "m7", inversion: 0 },
       { offsetGrid: 8, root: PC.Bb, kind: "7", inversion: 0 },
     ],
   },
-  // 8. Ebmaj7 — Eb5の全音符でトニックに着地して締める
+  // 8. Eb5(2分) D5(2分)
   {
-    notes: [note(0, 16, 5, -1)],
+    notes: [note(0, 8, 5, -1), note(8, 8, 6)],
     harmonies: [{ offsetGrid: 0, root: PC.Eb, kind: "maj7", inversion: 0 }],
   },
 ];
@@ -183,8 +196,11 @@ const S_WONDERFUL_A: Measure[] = [
 const FOUR_FOUR: TimeSignature = { numerator: 4, denominator: 4 };
 
 // 以下9曲は、一般的に知られるスタンダードのAセクション進行（8小節）に基づき、
-// buildStandardAでコードトーンのアルペジオを機械生成したもの。原曲メロディの
-// 転写ではない。
+// buildStandardAでharmoniesとコードトーンのアルペジオ（notesの初期値）を機械生成
+// したもの。原曲メロディの転写ではない。
+// ただしI Got Rhythm/But Not for Me/Tea for Twoの3曲は、ユーザーが目視で
+// 書き出した実際のメロディに基づき、withNotes()でnotesだけを差し替えている
+// （harmoniesはbuildStandardAの生成結果のまま）。
 
 // 1. I Got Rhythm（George Gershwin, 1930 / パブリックドメイン）— Bb、
 //    いわゆる「リズムチェンジ」の典型的なI-VI7-ii-V7循環。
@@ -200,6 +216,26 @@ const RHYTHM_BARS: BarSpec[] = [
     { root: PC.F, kind: "7" },
   ],
   [{ root: PC.Bb, kind: "maj7" }],
+];
+
+// ユーザーが目視で書き出した実際のメロディ（音名・音価）をnote()/rest()で変換。
+const RHYTHM_A_NOTES: Note[][] = [
+  // 1. 8分休符 C5(4分) D5(4分) + 残りは無音のまま推測せず休符で埋める(付点4分休符)
+  [rest(0, 2), note(2, 4, 7), note(6, 4, 6), rest(10, 6)],
+  // 2. Eb5(付点4分) D5(8分) C5(2分、タイ)
+  [note(0, 6, 5, -1), note(6, 2, 6), note(8, 8, 7)],
+  // 3. 8分休符 D5(4分) F5(4分) + 付点4分休符
+  [rest(0, 2), note(2, 4, 6), note(6, 4, 4), rest(10, 6)],
+  // 4. Eb5(付点4分) D5(8分、スラー) C5(2分)
+  [note(0, 6, 5, -1), note(6, 2, 6), note(8, 8, 7)],
+  // 5. 8分休符 D5(4分) F5(4分) + 付点4分休符
+  [rest(0, 2), note(2, 4, 6), note(6, 4, 4), rest(10, 6)],
+  // 6. Eb5(付点4分) F5(8分) 8分休符 F5(8分) + 4分休符（8分休符+残り8分を統合）
+  [note(0, 6, 4), note(6, 2, 4), rest(8, 2), note(10, 2, 4), rest(12, 4)],
+  // 7. G5(4分) F5(8分) Eb5(8分) D5(8分) C5(8分、スラー) + 4分休符
+  [note(0, 4, 3), note(4, 2, 4), note(6, 2, 5, -1), note(8, 2, 6), note(10, 2, 7), rest(12, 4)],
+  // 8. Bb4(全音符)
+  [note(0, 16, 8, -1)],
 ];
 
 // 2. Body and Soul（Johnny Green, 1930）— Db、ii-V-Iを軸にした進行。
@@ -282,6 +318,28 @@ const BUT_NOT_FOR_ME_BARS: BarSpec[] = [
   [{ root: PC.G, kind: "maj7" }],
 ];
 
+// ユーザーが目視で書き出した実際のメロディ（音名・音価）をnote()/rest()で変換。
+// 確信度がやや低い旨の申告あり（特に3・7小節目のG4半音符のあと、および
+// 4・8小節目末尾の無音区間の長さは、ユーザー自身も確証が薄いとのこと）。
+const BUT_NOT_FOR_ME_A_NOTES: Note[][] = [
+  // 1. G4(2分) F4(4分) F4(4分、スラー)
+  [note(0, 8, 10), note(8, 4, 11), note(12, 4, 11)],
+  // 2. F4(4分)×4
+  [note(0, 4, 11), note(4, 4, 11), note(8, 4, 11), note(12, 4, 11)],
+  // 3. G4(2分) + 残りは2分休符（確信度やや低い）
+  [note(0, 8, 10), rest(8, 8)],
+  // 4. 8分休符 F4(4分)×3 + 8分休符（確信度やや低い）
+  [rest(0, 2), note(2, 4, 11), note(6, 4, 11), note(10, 4, 11), rest(14, 2)],
+  // 5. 1小節目と同じ音型
+  [note(0, 8, 10), note(8, 4, 11), note(12, 4, 11)],
+  // 6. 2小節目と同じ音型
+  [note(0, 4, 11), note(4, 4, 11), note(8, 4, 11), note(12, 4, 11)],
+  // 7. 3小節目と同じ音型（確信度やや低い）
+  [note(0, 8, 10), rest(8, 8)],
+  // 8. 4小節目と同じ音型（確信度やや低い）
+  [rest(0, 2), note(2, 4, 11), note(6, 4, 11), note(10, 4, 11), rest(14, 2)],
+];
+
 // 7. I Can't Give You Anything But Love（Jimmy McHugh, 1928）— C、
 //    I-iidimを含むスウィング期らしい進行。
 const CANT_GIVE_YOU_BARS: BarSpec[] = [
@@ -338,6 +396,26 @@ const TEA_FOR_TWO_BARS: BarSpec[] = [
   [{ root: PC.C, kind: "maj7" }],
 ];
 
+// ユーザーが目視で書き出した実際のメロディ（音名・音価）をnote()/rest()で変換。
+const TEA_FOR_TWO_A_NOTES: Note[][] = [
+  // 1. Bb4(付点4分) C5(8分) D5(付点4分) Eb5(8分)
+  [note(0, 6, 8, -1), note(6, 2, 7), note(8, 6, 6), note(14, 2, 5, -1)],
+  // 2. D5(付点4分) C5(8分) Bb4(付点4分) C5(8分)
+  [note(0, 6, 6), note(6, 2, 7), note(8, 6, 8, -1), note(14, 2, 7)],
+  // 3. Bb4(付点4分) C5(8分) D5(付点4分) Bb4(8分)
+  [note(0, 6, 8, -1), note(6, 2, 7), note(8, 6, 6), note(14, 2, 8, -1)],
+  // 4. C5(4分) D5(8分) Eb5(4分) F5(8分) + 4分休符
+  [note(0, 4, 7), note(4, 2, 6), note(6, 4, 5, -1), note(10, 2, 4), rest(12, 4)],
+  // 5. 3小節目と同じ音型
+  [note(0, 6, 8, -1), note(6, 2, 7), note(8, 6, 6), note(14, 2, 8, -1)],
+  // 6. D5(付点4分) C5(8分) Bb4(4分) + 4分休符
+  [note(0, 6, 6), note(6, 2, 7), note(8, 4, 8, -1), rest(12, 4)],
+  // 7. Bb4(全音符)
+  [note(0, 16, 8, -1)],
+  // 8. C5(4分) 8分休符 2分休符 + 残り8分休符（16グリッドに満たない分を補完）
+  [note(0, 4, 7), rest(4, 2), rest(6, 8), rest(14, 2)],
+];
+
 export const TEMPLATES: Template[] = [
   {
     id: "swonderful-a",
@@ -353,7 +431,7 @@ export const TEMPLATES: Template[] = [
     root: PC.Bb,
     useFlats: true,
     timeSig: FOUR_FOUR,
-    measures: buildStandardA(RHYTHM_BARS, true, START_ROW),
+    measures: withNotes(buildStandardA(RHYTHM_BARS, true, START_ROW), RHYTHM_A_NOTES),
   },
   {
     id: "body-and-soul-a",
@@ -393,7 +471,7 @@ export const TEMPLATES: Template[] = [
     root: PC.G,
     useFlats: false,
     timeSig: FOUR_FOUR,
-    measures: buildStandardA(BUT_NOT_FOR_ME_BARS, false, START_ROW),
+    measures: withNotes(buildStandardA(BUT_NOT_FOR_ME_BARS, false, START_ROW), BUT_NOT_FOR_ME_A_NOTES),
   },
   {
     id: "cant-give-you-a",
@@ -417,6 +495,6 @@ export const TEMPLATES: Template[] = [
     root: PC.C,
     useFlats: true,
     timeSig: FOUR_FOUR,
-    measures: buildStandardA(TEA_FOR_TWO_BARS, true, START_ROW),
+    measures: withNotes(buildStandardA(TEA_FOR_TWO_BARS, true, START_ROW), TEA_FOR_TWO_A_NOTES),
   },
 ];
