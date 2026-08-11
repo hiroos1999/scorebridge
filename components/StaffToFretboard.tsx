@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CHORD_TYPES } from "@/lib/chords";
+import { TEMPLATES } from "@/lib/templates";
 
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
@@ -207,7 +209,8 @@ function gridToMs(grid: number) {
 
 // メロディ（音価に応じて左から詰めて配置される単音・手動積み上げ和音）のみを表す。
 // startGridは自分が属するMeasure内でのローカルなグリッド番号（0〜gridsPerMeasure-1）。
-type Note = {
+// lib/templates.ts（曲テンプレートデータ）からも参照するためexportする。
+export type Note = {
   startGrid: number;
   duration: number;
   isRest: boolean;
@@ -218,26 +221,20 @@ type Note = {
 // コード選択UIで配置されるコードシンボル。MusicXMLのharmony要素に相当し、
 // 音価を持たず「小節内のどのタイミングか」「ルート」「コードの種類」
 // 「転回形（分数コードのベース音に相当）」だけを持つ、notesとは独立したデータ。
-type Harmony = {
+export type Harmony = {
   offsetGrid: number; // 小節内でのタイミング（グリッド単位、MusicXMLのoffsetに相当）
   root: number; // ルート音のピッチクラス
   kind: string; // コードタイプ（maj7, m7, 7, dim, m7b5等。MusicXMLのkind相当）
   inversion: number; // 転回形（0=基本形, 1=第1転回形…）。MusicXMLのinversion相当
 };
 
-type Measure = {
+export type Measure = {
   notes: Note[];
   harmonies: Harmony[];
 };
 
-// 基本的な7thコード（ルートからの半音間隔）。
-const CHORD_TYPES: Record<string, number[]> = {
-  maj7: [0, 4, 7, 11],
-  m7: [0, 3, 7, 10],
-  "7": [0, 4, 7, 10],
-  dim: [0, 3, 6, 9],
-  m7b5: [0, 3, 6, 10],
-};
+// 基本的な7thコード（ルートからの半音間隔）。lib/chords.tsに定義（理由はそちらの
+// コメント参照: lib/templates.tsとの循環importを避けるため）。
 const CHORD_TYPE_LABELS: Record<string, string> = {
   maj7: "maj7",
   m7: "m7",
@@ -311,7 +308,7 @@ function buildChordVoicing(
   });
 }
 
-type TimeSignature = { numerator: number; denominator: number };
+export type TimeSignature = { numerator: number; denominator: number };
 // 分母が8かつ分子が3の倍数（3/8, 6/8, 9/8, 12/8等）を複合拍子として扱う簡易判定。
 // 複合拍子では1拍＝付点4分音符（8分音符3つ＝グリッド6単位）になるため、
 // 連桁のグループ分け単位もこれに合わせて切り替える（単純拍子は4グリッド＝4分音符1つ分）。
@@ -841,6 +838,24 @@ export default function StaffToFretboard() {
     setMeasures((prev) => prev.map(() => ({ notes: [], harmonies: [] })));
     setSelectedNoteKey(null);
     setSelectedRowIdx(null);
+    setDefaultDuration(DEFAULT_DURATION);
+  }
+
+  // テンプレート選択UIから、曲テンプレートのmeasures・キー・拍子を初期値として
+  // 丸ごと読み込む。読み込んだ後はこれまで通りの通常のmeasures stateになるため、
+  // 以後の音符追加・削除・音価変更・コード配置などの編集は一切制限されない
+  // （テンプレート自体(lib/templates.ts)は不変のまま、そのコピーがセットされる）。
+  function handleLoadTemplate(templateId: string) {
+    const template = TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return;
+    setMeasures(template.measures.map((m) => ({ notes: [...m.notes], harmonies: [...m.harmonies] })));
+    setRoot(template.root);
+    setUseFlats(template.useFlats);
+    setTimeSig(template.timeSig);
+    setCurrentMeasureIndex(0);
+    setSelectedNoteKey(null);
+    setSelectedRowIdx(null);
+    setChordTargetGrid(0);
     setDefaultDuration(DEFAULT_DURATION);
   }
 
@@ -1400,6 +1415,23 @@ export default function StaffToFretboard() {
       <h2 style={{ fontSize: "18px", fontWeight: 500 }}>五線譜 → ギター指板 プロトタイプ</h2>
 
       <div id="controls">
+        <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>テンプレート</label>
+        <select
+          id="template-select"
+          defaultValue=""
+          onChange={(e) => {
+            if (!e.target.value) return;
+            handleLoadTemplate(e.target.value);
+            e.target.value = ""; // 読み込み後は「未選択」に戻す(measuresは通常のstateとして編集可能)
+          }}
+        >
+          <option value="">選択…</option>
+          {TEMPLATES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
         <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>キー（移動ドのDo）</label>
         <select value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
           {names.map((n, i) => (
