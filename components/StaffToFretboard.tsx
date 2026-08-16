@@ -185,13 +185,52 @@ function colorFor(role: string): [string, string] {
   return map[role] || map.gray;
 }
 
-// A4 (pc=9, octave=4) -> absPitch = 4*12+9 = 57 を440Hzの基準点とする。
-const A4_ABS_PITCH = 57;
 const QUARTER_NOTE_MS = 500;
 
-function pitchToFrequency(absPitch: number) {
-  return 440 * Math.pow(2, (absPitch - A4_ABS_PITCH) / 12);
+// ---- サンプル音源（ギター/ベースの単音mp3）----
+// public/audio/melody, public/audio/bass に、音名ごとの単音サンプルを配置している
+// （出典: FluidR3_GM soundfont, via github.com/gleitz/midi-js-soundfonts, MIT License）。
+// ファイル名は "C4.mp3" のような音名+オクターブ（フラット表記、例: Eb3）。
+// この曲アプリのabsPitch表記（A4=57）はscientific pitch notation（C4=中央ド）と
+// 一致しているため、そのまま音名に変換できる。
+const SAMPLE_PC_NAMES_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+function absPitchToSampleName(absPitch: number): string {
+  const octave = Math.floor(absPitch / 12);
+  const pc = ((absPitch % 12) + 12) % 12;
+  return `${SAMPLE_PC_NAMES_FLAT[pc]}${octave}`;
 }
+
+// メロディ用サンプルの音域: 五線がカバーするE3〜C6（rows参照）に、臨時記号による
+// ±半音の余裕を持たせる。ベース用サンプルの音域は、ウォーキングベース生成で
+// 使っているBASS_MIN_ABS_PITCH〜BASS_MAX_ABS_PITCHとそのまま揃える。
+const MELODY_SAMPLE_MIN_ABS_PITCH = 39; // Eb3
+const MELODY_SAMPLE_MAX_ABS_PITCH = 73; // Db6
+
+type SampleInstrument = "melody" | "bass";
+
+// absPitchちょうどのサンプルが無い場合（音域外）は、範囲内で最も近い音の
+// サンプルをplaybackRateでピッチシフトして代用する。範囲内であれば必ず実サンプル
+// そのままの音高で鳴る。
+function clampToSampleRange(absPitch: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, absPitch));
+}
+
+// ---- ドラムサンプル ----
+// public/audio/drums に、パーツごとに1発ずつの単発サンプルを配置している
+// （出典: sonic-pi プロジェクトが freesound.org から収集したCC0音源の一部を、
+// 個別に選んでmp3化。sonic-pi自体はfreesound.orgの各投稿者による個別CC0表示を
+// そのまま踏襲しているだけなので、実質の出典はfreesound.org）。
+// ride: ride_tri.flac (trivialAccapella), hihat: drum_cymbal_pedal.flac (menegass),
+// kick: bd_jazz.flac (tripjazz), snare: drum_snare_soft.flac (menegass)
+const DRUM_VOICES = ["ride", "hihat", "kick", "snare"] as const;
+type DrumVoice = (typeof DRUM_VOICES)[number];
+// パーツごとの再生音量。生録音のため音圧差が大きく、キック/スネアがライドや
+// ハイハットに埋もれないようバランスを取っている。
+const DRUM_VOICE_GAIN: Record<DrumVoice, number> = { ride: 0.45, hihat: 0.6, kick: 0.85, snare: 0.55 };
+// ライドシンバルは生音のサステインが約4.7秒と長く、パターン通り連打すると
+// 減衰音が積み重なって濁ってしまうため、鳴り始めてから約1.3秒でフェードアウト
+// させて次の1打に道を譲らせる（他のパーツは元々短い一発音なのでそのまま）。
+const DRUM_VOICE_MAX_DURATION_SEC: Partial<Record<DrumVoice, number>> = { ride: 1.3 };
 
 // 音価は16分音符=1グリッドとしたグリッド数で表す。全音符=16, 2分=8, 4分=4, 8分=2, 16分=1。
 const DURATION_CYCLE = [16, 8, 4, 2, 1];
@@ -315,6 +354,133 @@ export type TimeSignature = { numerator: number; denominator: number };
 function isCompoundMeter(ts: TimeSignature): boolean {
   return ts.denominator === 8 && ts.numerator % 3 === 0;
 }
+
+// ---- ウォーキングベースライン生成 ----
+// ベースの音域（メロディよりおおよそ1〜2オクターブ下を狙う）。C0=0とする
+// absPitch表記で、C2(24)〜G3(43)のおよそ1.5オクターブに収める。
+const BASS_MIN_ABS_PITCH = 24;
+const BASS_MAX_ABS_PITCH = 43;
+const BASS_ANCHOR_ABS_PITCH = 28; // E2。再生開始時・直前音がまだ無い場合の基準点。
+
+// 指定ピッチクラスのうち、直前のベース音(prevAbsPitch)から見て最も近い音高を、
+// ベース音域内から選ぶ（buildChordVoicingの「常に直前より真上」とは違い、上下
+// どちらの方向にも動けるようにして、実際のウォーキングベースらしい自然な
+// 音のつながりにする）。
+function nearestBassPitch(pc: number, prevAbsPitch: number): number {
+  let best = BASS_ANCHOR_ABS_PITCH;
+  let bestDist = Infinity;
+  for (let oct = 0; oct <= 6; oct++) {
+    const candidate = oct * 12 + pc;
+    if (candidate < BASS_MIN_ABS_PITCH || candidate > BASS_MAX_ABS_PITCH) continue;
+    const dist = Math.abs(candidate - prevAbsPitch);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+// harmonies（コード進行）から、1拍1音のウォーキングベースラインを生成する。
+// 各小節のharmoniesを「曲頭からの絶対グリッド位置」の1本の時系列に並べ直し、
+// harmonies が置かれていない区間（小節をまたいでも）は直前のコードが鳴り続けている
+// ものとして扱う（そうしないと、コードを置いていない小節でベースが途切れてしまう）。
+// 各コードの持続拍数に応じたパターン:
+//   1拍だけ:  ルートのみ
+//   2拍:      ルート → 次のコードへのアプローチ音（半音下）
+//   3拍以上:  ルート → 3度→5度→(7度)…とコード構成音を巡回 → 最後の拍だけ
+//             次のコードへのアプローチ音（次のコードが無い最後の区間はルートを維持）
+function buildWalkingBassEvents(
+  measures: Measure[],
+  gridsPerMeasure: number,
+  timeSig: TimeSignature
+): { atGrid: number; durationGrid: number; absPitch: number }[] {
+  const beatUnit = isCompoundMeter(timeSig) ? 6 : 4;
+
+  const flat: { atGrid: number; root: number; kind: string }[] = [];
+  measures.forEach((m, mi) => {
+    m.harmonies.forEach((h) => {
+      flat.push({ atGrid: mi * gridsPerMeasure + h.offsetGrid, root: h.root, kind: h.kind });
+    });
+  });
+  if (flat.length === 0) return [];
+  flat.sort((a, b) => a.atGrid - b.atGrid);
+
+  const totalGrid = measures.length * gridsPerMeasure;
+  const events: { atGrid: number; durationGrid: number; absPitch: number }[] = [];
+  let prevAbsPitch = BASS_ANCHOR_ABS_PITCH;
+
+  flat.forEach((h, i) => {
+    const nextAtGrid = i + 1 < flat.length ? flat[i + 1].atGrid : totalGrid;
+    const durationGrid = nextAtGrid - h.atGrid;
+    if (durationGrid <= 0) return;
+    const beats = Math.max(1, Math.round(durationGrid / beatUnit));
+    const spacing = durationGrid / beats;
+    const nextRoot = i + 1 < flat.length ? flat[i + 1].root : null;
+    const intervals = CHORD_TYPES[h.kind] ?? [0];
+
+    for (let b = 0; b < beats; b++) {
+      let pc: number;
+      if (b === 0) {
+        pc = h.root;
+      } else if (b === beats - 1 && beats > 1) {
+        // 次のコードのルートへ半音下から進むアプローチ音（次が無ければルートを維持）。
+        pc = nextRoot !== null ? (((nextRoot - 1) % 12) + 12) % 12 : h.root;
+      } else {
+        const chordToneIdx = 1 + ((b - 1) % Math.max(1, intervals.length - 1));
+        pc = (h.root + (intervals[chordToneIdx] ?? 0)) % 12;
+      }
+      const absPitch = nearestBassPitch(pc, prevAbsPitch);
+      prevAbsPitch = absPitch;
+      events.push({
+        atGrid: h.atGrid + Math.round(b * spacing),
+        durationGrid: Math.round(spacing),
+        absPitch,
+      });
+    }
+  });
+
+  return events;
+}
+
+// ---- ドラムパターン生成 ----
+// まずはシンプルな4/4のジャズ基本パターンのみ対応（それ以外の拍子は無音のまま）。
+// ライド・ハイハットのグリッド量子化（16分=1グリッド）とは別に、スウィングの
+// 「裏」は3連符換算で1拍の2/3の位置に来るため、絶対ms時間で直接計算する
+// （小節・音符のスケジューリングと同じ絶対時間軸に載せて、他パートと同期させる）。
+type DrumEvent = { atMs: number; measureIndex: number; voice: DrumVoice };
+
+function buildDrumEvents(
+  measureCount: number,
+  measureDurationMs: number,
+  quarterNoteMs: number,
+  timeSig: TimeSignature
+): DrumEvent[] {
+  if (timeSig.numerator !== 4 || timeSig.denominator !== 4) return [];
+
+  const swingMs = quarterNoteMs * (2 / 3); // 3連符の2つ目=スウィングした裏拍の位置
+  const events: DrumEvent[] = [];
+  for (let measureIndex = 0; measureIndex < measureCount; measureIndex++) {
+    const measureStartMs = measureIndex * measureDurationMs;
+    const beatMs = (beat: number) => measureStartMs + beat * quarterNoteMs;
+
+    // ライドシンバル「チーン・チキ・チーン・チキ」: 1拍目・2拍目裏・3拍目・4拍目裏
+    events.push({ atMs: beatMs(0), measureIndex, voice: "ride" });
+    events.push({ atMs: beatMs(1) + swingMs, measureIndex, voice: "ride" });
+    events.push({ atMs: beatMs(2), measureIndex, voice: "ride" });
+    events.push({ atMs: beatMs(3) + swingMs, measureIndex, voice: "ride" });
+
+    // フットハイハット: 2拍目・4拍目のアクセント
+    events.push({ atMs: beatMs(1), measureIndex, voice: "hihat" });
+    events.push({ atMs: beatMs(3), measureIndex, voice: "hihat" });
+
+    // キック・スネアは控えめに、1小節に1回ずつだけ（キック=1拍目、スネア=3拍目の軽いコンプ）。
+    events.push({ atMs: beatMs(0), measureIndex, voice: "kick" });
+    events.push({ atMs: beatMs(2), measureIndex, voice: "snare" });
+  }
+  return events;
+}
+
 const TIME_SIG_OPTIONS: TimeSignature[] = [
   { numerator: 4, denominator: 4 },
   { numerator: 3, denominator: 4 },
@@ -443,6 +609,13 @@ export default function StaffToFretboard() {
   );
   const audioContextRef = useRef<AudioContext | null>(null);
   const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // 音名(absPitch)ごとの単音サンプルをデコード済みAudioBufferとしてキャッシュする。
+  const melodySampleCacheRef = useRef<Map<number, AudioBuffer>>(new Map());
+  const bassSampleCacheRef = useRef<Map<number, AudioBuffer>>(new Map());
+  // ドラムはパーツ(DrumVoice)ごとに1発だけなので、absPitchではなくvoice名をキーにする。
+  const drumSampleCacheRef = useRef<Map<DrumVoice, AudioBuffer>>(new Map());
+  const sampleLoadPromiseRef = useRef<Promise<void> | null>(null);
+  const [samplesReady, setSamplesReady] = useState(false);
 
   function clearScheduledPlayback() {
     timeoutIdsRef.current.forEach((id) => clearTimeout(id));
@@ -463,7 +636,7 @@ export default function StaffToFretboard() {
     };
   }, []);
 
-  function playTone(absPitch: number, durationSec: number) {
+  function ensureAudioContext(): AudioContext {
     let ctx = audioContextRef.current;
     if (!ctx) {
       ctx = new AudioContext();
@@ -472,24 +645,138 @@ export default function StaffToFretboard() {
     if (ctx.state === "suspended") {
       ctx.resume();
     }
-    const freq = pitchToFrequency(absPitch);
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = freq;
+    return ctx;
+  }
 
+  async function fetchAndDecodeAudio(ctx: AudioContext, url: string): Promise<AudioBuffer> {
+    const res = await fetch(url);
+    const arrayBuffer = await res.arrayBuffer();
+    // Safari等ではPromise版decodeAudioDataが未対応な場合があるためコールバック版でラップする。
+    return await new Promise<AudioBuffer>((resolve, reject) => {
+      ctx.decodeAudioData(arrayBuffer, resolve, reject);
+    });
+  }
+
+  function loadPitchSampleBuffer(ctx: AudioContext, instrument: SampleInstrument, absPitch: number) {
+    const name = absPitchToSampleName(absPitch);
+    return fetchAndDecodeAudio(ctx, `/audio/${instrument}/${name}.mp3`);
+  }
+
+  // ページ表示後すぐに（Playが押される前から）バックグラウンドで全サンプルを
+  // 先読みしておく。ensureAudioContext()はユーザー操作前に呼んでもAudioContextの
+  // 生成自体は問題なく、decodeAudioDataもsuspended状態のまま実行できる。
+  function ensureSamplesLoaded(): Promise<void> {
+    if (!sampleLoadPromiseRef.current) {
+      const ctx = ensureAudioContext();
+      const jobs: Promise<void>[] = [];
+      for (let ap = MELODY_SAMPLE_MIN_ABS_PITCH; ap <= MELODY_SAMPLE_MAX_ABS_PITCH; ap++) {
+        const absPitch = ap;
+        jobs.push(
+          loadPitchSampleBuffer(ctx, "melody", absPitch).then((buf) => {
+            melodySampleCacheRef.current.set(absPitch, buf);
+          })
+        );
+      }
+      for (let ap = BASS_MIN_ABS_PITCH; ap <= BASS_MAX_ABS_PITCH; ap++) {
+        const absPitch = ap;
+        jobs.push(
+          loadPitchSampleBuffer(ctx, "bass", absPitch).then((buf) => {
+            bassSampleCacheRef.current.set(absPitch, buf);
+          })
+        );
+      }
+      DRUM_VOICES.forEach((voice) => {
+        jobs.push(
+          fetchAndDecodeAudio(ctx, `/audio/drums/${voice}.mp3`).then((buf) => {
+            drumSampleCacheRef.current.set(voice, buf);
+          })
+        );
+      });
+      sampleLoadPromiseRef.current = Promise.all(jobs).then(() => {
+        setSamplesReady(true);
+      });
+    }
+    return sampleLoadPromiseRef.current;
+  }
+
+  useEffect(() => {
+    ensureSamplesLoaded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // absPitchちょうどのサンプルをそのまま再生する。範囲外（通常は起きない想定）の
+  // 音だけは、範囲内で一番近い音のサンプルをplaybackRateでピッチシフトして代用する。
+  // ゲインエンベロープは、サンプル自体のアタック/減衰を活かしつつ、開始・終端の
+  // クリックノイズ防止と、次の音に被らないよう音価いっぱいで軽くフェードアウト
+  // させる役割に絞っている（合成音時代の4段エンベロープは不要になった）。
+  function playSample(
+    cache: Map<number, AudioBuffer>,
+    absPitch: number,
+    minPitch: number,
+    maxPitch: number,
+    durationSec: number,
+    peakGain: number
+  ) {
+    const ctx = ensureAudioContext();
+    const clamped = clampToSampleRange(absPitch, minPitch, maxPitch);
+    const buffer = cache.get(clamped);
+    if (!buffer) return; // 通常はPlay開始前にロード済みのため起きない
     const now = ctx.currentTime;
-    const attack = 0.01;
-    const release = Math.min(0.05, durationSec / 4);
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = Math.pow(2, (absPitch - clamped) / 12);
+
+    const gain = ctx.createGain();
+    const attack = Math.min(0.005, durationSec * 0.2);
+    const release = Math.min(0.05, durationSec * 0.3);
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.3, now + attack);
-    gain.gain.setValueAtTime(0.3, now + durationSec - release);
+    gain.gain.linearRampToValueAtTime(peakGain, now + attack);
+    gain.gain.setValueAtTime(peakGain, now + Math.max(attack, durationSec - release));
     gain.gain.linearRampToValueAtTime(0, now + durationSec);
 
-    osc.connect(gain);
+    source.connect(gain);
     gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + durationSec);
+    source.start(now);
+    source.stop(now + durationSec + 0.05);
+  }
+
+  function playMelodyTone(absPitch: number, durationSec: number) {
+    playSample(melodySampleCacheRef.current, absPitch, MELODY_SAMPLE_MIN_ABS_PITCH, MELODY_SAMPLE_MAX_ABS_PITCH, durationSec, 0.9);
+  }
+
+  function playBassTone(absPitch: number, durationSec: number) {
+    playSample(bassSampleCacheRef.current, absPitch, BASS_MIN_ABS_PITCH, BASS_MAX_ABS_PITCH, durationSec, 0.95);
+  }
+
+  // ドラムは音価を持たない単発トリガーなので、音符/ベースのようなdurationSec
+  // 指定は不要（サンプル自体の自然な減衰に任せる）。ライドだけは音の重なりで
+  // 濁らないよう、DRUM_VOICE_MAX_DURATION_SECの長さでフェードアウトさせる。
+  function playDrumHit(voice: DrumVoice) {
+    const ctx = ensureAudioContext();
+    const buffer = drumSampleCacheRef.current.get(voice);
+    if (!buffer) return; // 通常はPlay開始前にロード済みのため起きない
+    const now = ctx.currentTime;
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const gain = ctx.createGain();
+    const peak = DRUM_VOICE_GAIN[voice];
+    const maxDurationSec = DRUM_VOICE_MAX_DURATION_SEC[voice];
+    if (maxDurationSec) {
+      const release = 0.25;
+      gain.gain.setValueAtTime(peak, now);
+      gain.gain.setValueAtTime(peak, now + Math.max(0, maxDurationSec - release));
+      gain.gain.linearRampToValueAtTime(0, now + maxDurationSec);
+      source.stop(now + maxDurationSec + 0.02);
+    } else {
+      gain.gain.value = peak;
+    }
+
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(now);
   }
 
   // notes(メロディ)とharmonies(コード)は完全に独立したデータなので、再生も
@@ -498,15 +785,20 @@ export default function StaffToFretboard() {
   // データ上の結びつきは一切ない。
   type PlaybackEvent =
     | { atMs: number; endMs: number; measureIndex: number; kind: "note"; note: Note }
-    | { atMs: number; endMs: number; measureIndex: number; kind: "harmony"; harmony: Harmony };
+    | { atMs: number; endMs: number; measureIndex: number; kind: "bass"; absPitch: number }
+    | { atMs: number; endMs: number; measureIndex: number; kind: "harmony"; harmony: Harmony }
+    | { atMs: number; endMs: number; measureIndex: number; kind: "drum"; voice: DrumVoice };
 
-  function handlePlayClick() {
+  async function handlePlayClick() {
     if (isPlaying) {
       stopPlayback();
       return;
     }
     const hasContent = measures.some((m) => m.notes.length > 0 || m.harmonies.length > 0);
     if (!hasContent) return;
+    // 通常はPlayボタンがsamplesReadyになるまで無効化されているため素通りするが、
+    // 念のためここでも先読みの完了を待つ。
+    await ensureSamplesLoaded();
 
     const measureDurationMs = gridToMs(gridsPerMeasure);
     const events: PlaybackEvent[] = [];
@@ -520,6 +812,8 @@ export default function StaffToFretboard() {
       // harmonyは音価を持たないため、そのoffsetGridから「次のharmonyのoffsetGrid
       // （無ければ小節の終わり）」までを自分の区間として鳴らす。1小節に複数の
       // コードを置いた場合、それぞれが自分の区間だけ鳴る。
+      // 音（ブロックコード）はもう鳴らさず、和音ハイライト表示のためだけに使う
+      // （実際の低音の音はウォーキングベースが担う）。
       const sortedHarmonies = [...m.harmonies].sort((a, b) => a.offsetGrid - b.offsetGrid);
       sortedHarmonies.forEach((harmony, hi) => {
         const nextOffset = sortedHarmonies[hi + 1]?.offsetGrid ?? gridsPerMeasure;
@@ -527,6 +821,20 @@ export default function StaffToFretboard() {
         const toneSec = gridToMs(nextOffset - harmony.offsetGrid) / 1000;
         events.push({ atMs, endMs: atMs + toneSec * 1000, measureIndex, kind: "harmony", harmony });
       });
+    });
+    // ウォーキングベース: harmoniesから1拍1音のベースラインを生成し、
+    // メロディ・コードハイライトと同じ絶対時間軸に載せる。
+    buildWalkingBassEvents(measures, gridsPerMeasure, timeSig).forEach((be) => {
+      const atMs = gridToMs(be.atGrid);
+      const toneSec = gridToMs(be.durationGrid) / 1000;
+      const measureIndex = Math.floor(be.atGrid / gridsPerMeasure);
+      events.push({ atMs, endMs: atMs + toneSec * 1000, measureIndex, kind: "bass", absPitch: be.absPitch });
+    });
+    // ドラム: メロディ・ベースと同じ絶対時間軸（measureDurationMs・QUARTER_NOTE_MS）
+    // に載せることで、テンポが変わってもドラムだけ走る/遅れるということが起きない。
+    // 現状は4/4のジャズ基本パターンのみ対応（それ以外の拍子では無音）。
+    buildDrumEvents(measures.length, measureDurationMs, QUARTER_NOTE_MS, timeSig).forEach((de) => {
+      events.push({ atMs: de.atMs, endMs: de.atMs, measureIndex: de.measureIndex, kind: "drum", voice: de.voice });
     });
     if (events.length === 0) return;
     events.sort((a, b) => a.atMs - b.atMs);
@@ -548,19 +856,21 @@ export default function StaffToFretboard() {
             // 和音（手動積み上げ）の場合は含まれる全ての音を同じタイミングで鳴らす。
             note.rowIdxList.forEach((rowIdx) => {
               const absPitch = rows[rowIdx].octave * 12 + rows[rowIdx].pc + (note.accidentals[rowIdx] ?? 0);
-              playTone(absPitch, toneSec);
+              playMelodyTone(absPitch, toneSec);
             });
           } else {
             // 休符の間は、前の音符のハイライトが残ったままにならないよう解除する。
             setPlayingNoteKey(null);
           }
+        } else if (ev.kind === "bass") {
+          // 音符同士をわずかに切り離し、指ではじくベースらしい粒立ちを出す。
+          playBassTone(ev.absPitch, toneSec * 0.92);
+        } else if (ev.kind === "drum") {
+          playDrumHit(ev.voice);
         } else {
+          // harmonyは音を鳴らさず、コードハイライト表示だけ更新する
+          // （実際の低音はkind:"bass"のウォーキングベースが担当）。
           setPlayingHarmonyKey({ measureIndex: ev.measureIndex, offsetGrid: ev.harmony.offsetGrid });
-          const voiced = buildChordVoicing(ev.harmony.root, ev.harmony.kind, useFlats, ev.harmony.inversion);
-          voiced.forEach(({ rowIdx, accidental }) => {
-            const absPitch = rows[rowIdx].octave * 12 + rows[rowIdx].pc + accidental;
-            playTone(absPitch, toneSec);
-          });
         }
       }, ev.atMs);
       timeoutIdsRef.current.push(timeoutId);
@@ -1537,8 +1847,13 @@ export default function StaffToFretboard() {
         <button id="chord-place-btn" onClick={handlePlaceChord}>
           和音を配置
         </button>
-        <button id="play-btn" style={{ marginLeft: "auto" }} onClick={handlePlayClick}>
-          {isPlaying ? "■ 停止" : "▶ Play"}
+        <button
+          id="play-btn"
+          style={{ marginLeft: "auto" }}
+          onClick={handlePlayClick}
+          disabled={!samplesReady && !isPlaying}
+        >
+          {isPlaying ? "■ 停止" : samplesReady ? "▶ Play" : "音源読み込み中…"}
         </button>
         <button id="clear-btn" onClick={handleClear}>
           クリア
