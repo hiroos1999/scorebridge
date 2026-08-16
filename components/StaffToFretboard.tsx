@@ -769,14 +769,18 @@ export default function StaffToFretboard() {
       gain.gain.setValueAtTime(peak, now);
       gain.gain.setValueAtTime(peak, now + Math.max(0, maxDurationSec - release));
       gain.gain.linearRampToValueAtTime(0, now + maxDurationSec);
-      source.stop(now + maxDurationSec + 0.02);
     } else {
       gain.gain.value = peak;
     }
 
     source.connect(gain);
     gain.connect(ctx.destination);
+    // stop()はstart()の後でなければ呼べない（先に呼ぶとInvalidStateErrorになる）ため、
+    // フェードアウトの予約はstart()の後に行う。
     source.start(now);
+    if (maxDurationSec) {
+      source.stop(now + maxDurationSec + 0.02);
+    }
   }
 
   // notes(メロディ)とharmonies(コード)は完全に独立したデータなので、再生も
