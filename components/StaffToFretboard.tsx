@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { TEMPLATES } from "@/lib/templates";
+import { parseMusicXmlFile } from "@/lib/musicxmlImport";
+import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
 
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
@@ -134,6 +136,13 @@ function baselineYForGlyphCenter(targetY: number, fontSize: number, centerUnits:
 }
 function glyphBBoxCenterUnits(glyphName: string) {
   const m = BRAVURA_GLYPH_METRICS[glyphName];
+  if (!m) {
+    // BRAVURA_GLYPH_METRICSに無いグリフ名が渡されるのは、本来は呼び出し側の
+    // バグ（未対応の音価等をこの関数まで素通しした）を意味する。ここで例外に
+    // せず中央(0)にフォールバックし、描画自体は止めない。
+    console.warn(`glyphBBoxCenterUnits: BRAVURA_GLYPH_METRICSに"${glyphName}"が見つかりません。中央(0)にフォールバックします。`);
+    return 0;
+  }
   return (m.yMin + m.yMax) / 2;
 }
 
@@ -206,7 +215,20 @@ function absPitchToSampleName(absPitch: number): string {
 const MELODY_SAMPLE_MIN_ABS_PITCH = 39; // Eb3
 const MELODY_SAMPLE_MAX_ABS_PITCH = 73; // Db6
 
-type SampleInstrument = "melody" | "bass";
+// ピアノ風コンピング用サンプルの音域: buildChordVoicing()が生成しうる全ての
+// 組み合わせ（12ルート×7コードタイプ×4転回形）を実際に列挙し、1オクターブ
+// 下げた（COMP_OCTAVE_SHIFT）上での絶対最小・最大からC3〜Bb4を採用した
+// （メロディの音域(E3〜C6)より低め＝ピアノ伴奏らしい、かつベース(C2〜G3)とも
+// 大きくは被らない帯域）。
+const COMP_SAMPLE_MIN_ABS_PITCH = 36; // C3
+const COMP_SAMPLE_MAX_ABS_PITCH = 58; // Bb4
+const COMP_OCTAVE_SHIFT = -12;
+// コンピングは「コード区間いっぱい鳴り続ける」のではなく、コード開始時に
+// 短く鳴らすスタブにする（実際のコード区間はharmonyによっては数小節にも
+// 及ぶため、そのまま伸ばすとサステインパッドのようになってしまう）。
+const COMP_STAB_MAX_SEC = 0.45;
+
+type SampleInstrument = "melody" | "bass" | "comp";
 
 // absPitchちょうどのサンプルが無い場合（音域外）は、範囲内で最も近い音の
 // サンプルをplaybackRateでピッチシフトして代用する。範囲内であれば必ず実サンプル
@@ -224,9 +246,15 @@ function clampToSampleRange(absPitch: number, min: number, max: number): number 
 // kick: bd_jazz.flac (tripjazz), snare: drum_snare_soft.flac (menegass)
 const DRUM_VOICES = ["ride", "hihat", "kick", "snare"] as const;
 type DrumVoice = (typeof DRUM_VOICES)[number];
-// パーツごとの再生音量。生録音のため音圧差が大きく、キック/スネアがライドや
-// ハイハットに埋もれないようバランスを取っている。
-const DRUM_VOICE_GAIN: Record<DrumVoice, number> = { ride: 0.45, hihat: 0.6, kick: 0.85, snare: 0.55 };
+// パーツごとの再生音量。ドラムのサンプル(freesoundの生録音)はmelody/bass/comp
+// のサンプルよりずっとホットに正規化されている（実測max_volume: ride -3.1dB,
+// hihat -2.5dB, kick -0.9dB, snare -5.6dB。対してmelody -18.1dB, bass -18.2dB,
+// comp -20.8dB）。同じgain値を使うとドラムだけ突出して聞こえるため、各サンプル
+// の実測ピークから逆算し、他パートの実効ピーク(melody実効-19dB、bass実効-13dB
+// 前後、comp実効-28dB前後)に対して「ride/hihatは常時鳴るので控えめに、
+// kick/snareは1小節に1回程度なので少しだけ前に出す」狙いの実効ピークになる
+// よう決めた値（ride/hihat≈-19〜-20dB、kick/snare≈-16〜-17dB）。
+const DRUM_VOICE_GAIN: Record<DrumVoice, number> = { ride: 0.14, hihat: 0.17, kick: 0.18, snare: 0.27 };
 // ライドシンバルは生音のサステインが約4.7秒と長く、パターン通り連打すると
 // 減衰音が積み重なって濁ってしまうため、鳴り始めてから約1.3秒でフェードアウト
 // させて次の1打に道を譲らせる（他のパーツは元々短い一発音なのでそのまま）。
@@ -320,12 +348,9 @@ function findRowIndex(naturalPc: number, octave: number): number {
 // 転回形は、構成音の並び順（何の音が一番下＝ベースになるか）をローテーションする
 // ことで表現する。例えばmaj7=[root,3rd,5th,7th]の第1転回形なら
 // [3rd,5th,7th,root]の順で一番下から積み上げる（rootは1オクターブ上に来る）。
-function buildChordVoicing(
-  rootPc: number,
-  chordType: string,
-  useFlats: boolean,
-  inversion = 0
-): { rowIdx: number; accidental: number }[] {
+// buildChordVoicing（指板・五線譜表示用）とplayCompChord（コンピング再生用）の
+// 両方で使う、絶対ピッチ(absPitch)自体の積み上げ計算。
+function buildChordVoicingAbsPitches(rootPc: number, chordType: string, inversion = 0): number[] {
   const intervals = CHORD_TYPES[chordType];
   const inv = Math.min(Math.max(inversion, 0), intervals.length - 1);
   const rotatedIntervals = [...intervals.slice(inv), ...intervals.slice(0, inv)];
@@ -339,6 +364,16 @@ function buildChordVoicing(
     absPitches.push(abs);
     prevAbs = abs;
   }
+  return absPitches;
+}
+
+function buildChordVoicing(
+  rootPc: number,
+  chordType: string,
+  useFlats: boolean,
+  inversion = 0
+): { rowIdx: number; accidental: number }[] {
+  const absPitches = buildChordVoicingAbsPitches(rootPc, chordType, inversion);
   return absPitches.map((abs) => {
     const octave = Math.floor(abs / 12);
     const pc = ((abs % 12) + 12) % 12;
@@ -560,15 +595,31 @@ const NOTEHEAD_FONT_SIZE = BRAVURA_FONT_SIZE * NOTEHEAD_VISUAL_SCALE;
 // 音符の臨時記号のフォントサイズは通常のグリフよりさらに一回り小さくする。
 const NOTE_ACCIDENTAL_FONT_SIZE = BRAVURA_FONT_SIZE * 0.55;
 
-export default function StaffToFretboard() {
-  const [useFlats, setUseFlats] = useState(true);
-  const [root, setRoot] = useState(0);
-  const [timeSig, setTimeSig] = useState<TimeSignature>({ numerator: 4, denominator: 4 });
+// devの検証画面など、テンプレート選択UIを経由せずに初期データを直接
+// 差し込みたい場合に使うprop。省略時は従来通りの空の初期状態になるため、
+// 通常のapp/page.tsx（<StaffToFretboard />をprops無しで呼ぶ）の挙動は変わらない。
+export type StaffToFretboardInitialData = {
+  root: number;
+  useFlats: boolean;
+  timeSig: TimeSignature;
+  measures: Measure[];
+};
+
+export default function StaffToFretboard({
+  initialTemplate,
+}: { initialTemplate?: StaffToFretboardInitialData } = {}) {
+  const [useFlats, setUseFlats] = useState(initialTemplate?.useFlats ?? true);
+  const [root, setRoot] = useState(initialTemplate?.root ?? 0);
+  const [timeSig, setTimeSig] = useState<TimeSignature>(
+    initialTemplate?.timeSig ?? { numerator: 4, denominator: 4 }
+  );
   // メロディ(notes)とコードシンボル(harmonies)は、MusicXMLのmeasure要素に倣い
   // 小節ごとに独立したデータとして持つ。互いの追加・削除・編集は一切影響しない。
   // measures配列は固定長ではなく、＋/削除ボタンで自由に伸縮する可変長配列。
-  const [measures, setMeasures] = useState<Measure[]>(() =>
-    Array.from({ length: INITIAL_MEASURE_COUNT }, () => ({ notes: [], harmonies: [] }))
+  const [measures, setMeasures] = useState<Measure[]>(
+    () =>
+      initialTemplate?.measures ??
+      Array.from({ length: INITIAL_MEASURE_COUNT }, () => ({ notes: [], harmonies: [] }))
   );
   const [selectedNoteKey, setSelectedNoteKey] = useState<number | null>(null);
   const [selectedRowIdx, setSelectedRowIdx] = useState<number | null>(null);
@@ -583,6 +634,12 @@ export default function StaffToFretboard() {
   const [restMode, setRestMode] = useState(false);
   const [fullFeedback, setFullFeedback] = useState(false);
   const [currentMeasureIndex, setCurrentMeasureIndex] = useState(0);
+  // MusicXMLインポート（サーバーには送信せず、ブラウザのIndexedDBにのみ保存する）。
+  const [importedSongs, setImportedSongs] = useState<ImportedSong[]>([]);
+  const [selectedImportId, setSelectedImportId] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [lastImportWarnings, setLastImportWarnings] = useState<{ fileName: string; warnings: string[] } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   // 表示中の小節のnotes/harmoniesだけを操作する各種ハンドラから使う短縮参照。
   const notes = measures[currentMeasureIndex].notes;
   const harmonies = measures[currentMeasureIndex].harmonies;
@@ -612,6 +669,8 @@ export default function StaffToFretboard() {
   // 音名(absPitch)ごとの単音サンプルをデコード済みAudioBufferとしてキャッシュする。
   const melodySampleCacheRef = useRef<Map<number, AudioBuffer>>(new Map());
   const bassSampleCacheRef = useRef<Map<number, AudioBuffer>>(new Map());
+  // ピアノ風コンピング（ハーモニー開始時に薄く鳴らすコード音）用。
+  const compSampleCacheRef = useRef<Map<number, AudioBuffer>>(new Map());
   // ドラムはパーツ(DrumVoice)ごとに1発だけなので、absPitchではなくvoice名をキーにする。
   const drumSampleCacheRef = useRef<Map<DrumVoice, AudioBuffer>>(new Map());
   const sampleLoadPromiseRef = useRef<Promise<void> | null>(null);
@@ -685,6 +744,14 @@ export default function StaffToFretboard() {
           })
         );
       }
+      for (let ap = COMP_SAMPLE_MIN_ABS_PITCH; ap <= COMP_SAMPLE_MAX_ABS_PITCH; ap++) {
+        const absPitch = ap;
+        jobs.push(
+          loadPitchSampleBuffer(ctx, "comp", absPitch).then((buf) => {
+            compSampleCacheRef.current.set(absPitch, buf);
+          })
+        );
+      }
       DRUM_VOICES.forEach((voice) => {
         jobs.push(
           fetchAndDecodeAudio(ctx, `/audio/drums/${voice}.mp3`).then((buf) => {
@@ -746,7 +813,28 @@ export default function StaffToFretboard() {
   }
 
   function playBassTone(absPitch: number, durationSec: number) {
-    playSample(bassSampleCacheRef.current, absPitch, BASS_MIN_ABS_PITCH, BASS_MAX_ABS_PITCH, durationSec, 0.95);
+    // 低音は等ラウドネス曲線の影響で同じgain値でも高い音より小さく聞こえるため、
+    // メロディ(0.9)よりgain自体を大きめにしている（サンプルの実測ピークは
+    // 約-18dBなので、この値でもクリップの心配はない）。
+    playSample(bassSampleCacheRef.current, absPitch, BASS_MIN_ABS_PITCH, BASS_MAX_ABS_PITCH, durationSec, 1.8);
+  }
+
+  // ピアノ風の薄いコンピング。ハーモニー(コード)の開始タイミングごとに、
+  // buildChordVoicingと同じボイシングを1オクターブ下げて短く鳴らす
+  // （メロディ・ウォーキングベースの主役を邪魔しないよう、音量は控えめ・
+  // 音価もそのコード区間いっぱいではなく短いスタブに留める）。
+  function playCompChord(rootPc: number, chordType: string, inversion: number, durationSec: number) {
+    const absPitches = buildChordVoicingAbsPitches(rootPc, chordType, inversion);
+    absPitches.forEach((abs) => {
+      playSample(
+        compSampleCacheRef.current,
+        abs + COMP_OCTAVE_SHIFT,
+        COMP_SAMPLE_MIN_ABS_PITCH,
+        COMP_SAMPLE_MAX_ABS_PITCH,
+        durationSec,
+        0.42
+      );
+    });
   }
 
   // ドラムは音価を持たない単発トリガーなので、音符/ベースのようなdurationSec
@@ -872,9 +960,11 @@ export default function StaffToFretboard() {
         } else if (ev.kind === "drum") {
           playDrumHit(ev.voice);
         } else {
-          // harmonyは音を鳴らさず、コードハイライト表示だけ更新する
-          // （実際の低音はkind:"bass"のウォーキングベースが担当）。
+          // harmonyのタイミングでコードハイライト表示を更新しつつ、ピアノ風の
+          // 薄いコンピングも鳴らす（実際の低音はkind:"bass"のウォーキングベースが
+          // 担当するので、コンピングはあくまで響きを添えるだけの短いスタブ）。
           setPlayingHarmonyKey({ measureIndex: ev.measureIndex, offsetGrid: ev.harmony.offsetGrid });
+          playCompChord(ev.harmony.root, ev.harmony.kind, ev.harmony.inversion, Math.min(toneSec, COMP_STAB_MAX_SEC));
         }
       }, ev.atMs);
       timeoutIdsRef.current.push(timeoutId);
@@ -1153,6 +1243,22 @@ export default function StaffToFretboard() {
     setSelectedNoteKey(null);
     setSelectedRowIdx(null);
     setDefaultDuration(DEFAULT_DURATION);
+    setSelectedImportId("");
+  }
+
+  // テンプレート・インポート済み曲のどちらも、measures・キー・拍子を初期値として
+  // 丸ごと読み込む処理は共通（読み込み元(lib/templates.tsの固定配列 or IndexedDB)は
+  // 不変のまま、そのコピーがstateにセットされる）。
+  function loadInitialData(data: { root: number; useFlats: boolean; timeSig: TimeSignature; measures: Measure[] }) {
+    setMeasures(data.measures.map((m) => ({ notes: [...m.notes], harmonies: [...m.harmonies] })));
+    setRoot(data.root);
+    setUseFlats(data.useFlats);
+    setTimeSig(data.timeSig);
+    setCurrentMeasureIndex(0);
+    setSelectedNoteKey(null);
+    setSelectedRowIdx(null);
+    setChordTargetGrid(0);
+    setDefaultDuration(DEFAULT_DURATION);
   }
 
   // テンプレート選択UIから、曲テンプレートのmeasures・キー・拍子を初期値として
@@ -1162,15 +1268,69 @@ export default function StaffToFretboard() {
   function handleLoadTemplate(templateId: string) {
     const template = TEMPLATES.find((t) => t.id === templateId);
     if (!template) return;
-    setMeasures(template.measures.map((m) => ({ notes: [...m.notes], harmonies: [...m.harmonies] })));
-    setRoot(template.root);
-    setUseFlats(template.useFlats);
-    setTimeSig(template.timeSig);
-    setCurrentMeasureIndex(0);
-    setSelectedNoteKey(null);
-    setSelectedRowIdx(null);
-    setChordTargetGrid(0);
-    setDefaultDuration(DEFAULT_DURATION);
+    loadInitialData(template);
+    setSelectedImportId("");
+  }
+
+  // ページ表示時に、IndexedDBに保存済みのインポート曲一覧を読み込んでおく
+  // （サーバーには問い合わせない。ブラウザローカルのIndexedDBだけを見る）。
+  useEffect(() => {
+    listImportedSongs()
+      .then(setImportedSongs)
+      .catch((err) => console.error("インポート済み曲の読み込みに失敗しました", err));
+  }, []);
+
+  // 「マイインポート」選択UIから、保存済みインポート曲を読み込む。テンプレートと
+  // 同様、読み込んだ後は通常のmeasures stateとして自由に編集できる。
+  function handleLoadImportedSong(id: string) {
+    const song = importedSongs.find((s) => s.id === id);
+    if (!song) return;
+    loadInitialData(song);
+  }
+
+  async function handleDeleteImportedSong(id: string) {
+    await deleteImportedSong(id);
+    setImportedSongs((prev) => prev.filter((s) => s.id !== id));
+    setSelectedImportId((prev) => (prev === id ? "" : prev));
+  }
+
+  // MusicXMLファイル選択時のハンドラ。読み込み→パース→曲名入力→IndexedDB保存
+  // まで全てブラウザ内で完結する（fetch等のネットワーク送信は一切行わない）。
+  async function handleImportFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 同じファイルを連続で選び直しても onChange が発火するようにする
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const bytes = await file.arrayBuffer();
+      const result = await parseMusicXmlFile(bytes);
+
+      const defaultName = file.name.replace(/\.(musicxml|xml|mxl)$/i, "");
+      const name = window.prompt("インポートする曲名を入力してください", defaultName);
+      if (name === null) return; // キャンセル
+
+      const song: ImportedSong = {
+        id: crypto.randomUUID(),
+        name: name.trim() || defaultName,
+        fileName: file.name,
+        importedAt: Date.now(),
+        root: result.root,
+        useFlats: result.useFlats,
+        timeSig: result.timeSig,
+        measures: result.measures,
+        warnings: result.warnings,
+      };
+      await saveImportedSong(song);
+      setImportedSongs((prev) => [song, ...prev]);
+      setSelectedImportId(song.id);
+      setLastImportWarnings({ fileName: file.name, warnings: result.warnings });
+      loadInitialData(song);
+    } catch (err) {
+      window.alert(`MusicXMLのインポートに失敗しました: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsImporting(false);
+    }
   }
 
   // 末尾に空の小節を1つ追加し、追加した小節に表示を移動する。
@@ -1200,42 +1360,14 @@ export default function StaffToFretboard() {
   // ギター（移調楽器）の記譜慣習により、実際に鳴る音は記譜より1オクターブ低いため、
   // 指板とのマッチング判定にのみ -12 半音する（度数ラベルや調号などの表示には影響させない）。
   const GUITAR_SOUNDING_OCTAVE_OFFSET = -12;
-  // 指板の「実際に配置されたメロディ音符」用の通常濃度マーカーは、これまで通り
-  // notesの厳密な絶対音高（オクターブまで含む）だけを対象にする。harmoniesは
-  // 別途harmonyPitchClasses(下記)で半透明マーカーとして重ねて表示する。
-  const activePitches = new Set(
-    measures
-      .flatMap((m) => m.notes)
-      .filter((n) => !n.isRest)
-      .flatMap((n) =>
-        n.rowIdxList.map(
-          (rowIdx) =>
-            rows[rowIdx].octave * 12 + rows[rowIdx].pc + (n.accidentals[rowIdx] ?? 0) + GUITAR_SOUNDING_OCTAVE_OFFSET
-        )
-      )
-  );
-  // 表示中の小節に配置されたharmony(コード)の構成音を、指板上の「全ポジション」に
-  // 半透明マーカーで示すためのピッチクラス集合。メロディ音符と違って特定の
-  // オクターブ（絶対音高）には結びつけず、同じ音名なら弦・フレットを問わず
-  // 該当させる（コードの押さえ方を探す用途のため）。転回形はベース音の
-  // 選び方であって構成音の集合自体は変わらないため、ここでは考慮しない。
-  // harmoniesは既にmeasures[currentMeasureIndex].harmoniesにスコープ済みなので、
-  // 小節を移動すればこの集合も自動的に切り替わる。
-  // 再生中は「今鳴っているコード」だけに絞り込み、1小節に複数コードがある場合でも
-  // タイミングに応じてハイライトが切り替わるようにする。非再生時（静止画面）は
-  // どのタイミングが「今」かが一意に決まらないため、これまで通り表示中の小節の
-  // 全harmonyをまとめて示す。
-  const playingHarmonyInCurrentMeasure =
-    isPlaying && playingHarmonyKey?.measureIndex === currentMeasureIndex
-      ? harmonies.find((h) => h.offsetGrid === playingHarmonyKey.offsetGrid)
-      : undefined;
-  const harmonyPitchClasses = new Set(
-    (isPlaying ? (playingHarmonyInCurrentMeasure ? [playingHarmonyInCurrentMeasure] : []) : harmonies).flatMap((h) =>
-      (CHORD_TYPES[h.kind] ?? []).map((interval) => (h.root + interval) % 12)
-    )
-  );
-  // 再生中の音符（和音の場合は全ての構成音）の実際の音の高さ。指板側のハイライトに使う。
-  // ローカルなstartGridは小節をまたいで一意ではないため、measureIndexも一致させる。
+
+  // 指板には「今実際に鳴っている音」だけを表示する。曲全体や小節全体の音符を
+  // まとめて出すことはしない（過去はactivePitchesが全小節を対象にしていたが、
+  // 弾いている音が分からなくなるため廃止）。
+  //   - 再生中: playingNoteKey（再生スケジューラが今この瞬間に鳴らしている音符）
+  //   - 停止中: selectedNoteKey（五線譜上でクリックして選択中の音符）
+  // どちらも「小節内ローカルなstartGrid」なのでmeasureIndex(再生中はイベント側の
+  // measureIndex、停止中はcurrentMeasureIndex)と組み合わせて特定する。
   const playingNote = playingNoteKey
     ? measures[playingNoteKey.measureIndex]?.notes.find((n) => n.startGrid === playingNoteKey.startGrid)
     : undefined;
@@ -1249,6 +1381,43 @@ export default function StaffToFretboard() {
             GUITAR_SOUNDING_OCTAVE_OFFSET
         )
       : []
+  );
+  const selectedNote = selectedNoteKey !== null ? notes.find((n) => n.startGrid === selectedNoteKey) : undefined;
+  const selectedMelodyAbsPitches = new Set(
+    selectedNote && !selectedNote.isRest
+      ? selectedNote.rowIdxList.map(
+          (rowIdx) =>
+            rows[rowIdx].octave * 12 +
+            rows[rowIdx].pc +
+            (selectedNote.accidentals[rowIdx] ?? 0) +
+            GUITAR_SOUNDING_OCTAVE_OFFSET
+        )
+      : []
+  );
+  const displayedMelodyAbsPitches = isPlaying ? playingAbsPitches : selectedMelodyAbsPitches;
+
+  // コードも同じ考え方: 再生中は「今鳴っているharmony」、停止中は「和音配置
+  // カーソル(chordTargetGrid)が指しているharmony」だけを、指板上の「全ポジション」に
+  // 半透明マーカーで示す。メロディと違って特定のオクターブには結びつけず、同じ
+  // 音名なら弦・フレットを問わず該当させる（コードの押さえ方を探す用途のため）。
+  // 転回形はベース音の選び方であって構成音の集合自体は変わらないため、ここでは
+  // 考慮しない。
+  const playingHarmonyInCurrentMeasure =
+    isPlaying && playingHarmonyKey?.measureIndex === currentMeasureIndex
+      ? harmonies.find((h) => h.offsetGrid === playingHarmonyKey.offsetGrid)
+      : undefined;
+  // chordTargetGridは「次に和音を配置する位置」のカーソルだが、既存harmonyの
+  // 位置に一致するとは限らない（カーソルがコードの少し後ろにある等）ため、
+  // 「そのカーソル位置で実際に効いているコード」＝offsetGridがchordTargetGrid以下で
+  // 最大のharmonyを選ぶ。該当が無ければコード表示なし。
+  const chordCursorHarmony = !isPlaying
+    ? harmonies.filter((h) => h.offsetGrid <= chordTargetGrid).sort((a, b) => b.offsetGrid - a.offsetGrid)[0]
+    : undefined;
+  const displayedHarmony = isPlaying ? playingHarmonyInCurrentMeasure : chordCursorHarmony;
+  const harmonyPitchClasses = new Set(
+    (displayedHarmony ? [displayedHarmony] : []).flatMap((h) =>
+      (CHORD_TYPES[h.kind] ?? []).map((interval) => (h.root + interval) % 12)
+    )
   );
 
   const fbLeft = 100;
@@ -1487,7 +1656,14 @@ export default function StaffToFretboard() {
       2: "rest8th",
       1: "rest16th",
     };
-    const glyph = glyphMap[duration];
+    // durationが16/8/4/2/1のどれとも一致しない場合（3連符を丸めた結果の3等、
+    // MusicXMLインポートで実際に発生する）は、noteheadGlyphForDurationと同じ
+    // 考え方で「それ以下で一番近い標準音価」の休符グリフに丸めて表示する
+    // （見た目は近似になるが、再生タイミング自体は元のdurationのまま正しい。
+    // ここで未対応のグリフ名をそのまま渡すとglyphBBoxCenterUnitsが落ちるため、
+    // 必ずglyphMapのキーのどれかに解決してから渡す）。
+    const glyph =
+      glyphMap[duration] ?? glyphMap[DURATION_CYCLE.find((d) => duration >= d) ?? 1];
     const centerUnits = glyphBBoxCenterUnits(glyph);
     const baselineY = baselineYForGlyphCenter(LINE3_Y, REST_FONT_SIZE, centerUnits);
     return (
@@ -1746,6 +1922,44 @@ export default function StaffToFretboard() {
             </option>
           ))}
         </select>
+
+        <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>マイインポート</label>
+        <select
+          id="my-imports-select"
+          value={selectedImportId}
+          onChange={(e) => {
+            setSelectedImportId(e.target.value);
+            if (e.target.value) handleLoadImportedSong(e.target.value);
+          }}
+        >
+          <option value="">{importedSongs.length === 0 ? "（まだありません）" : "選択…"}</option>
+          {importedSongs.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        {selectedImportId && (
+          <button
+            id="my-imports-delete-btn"
+            title="選択中のマイインポートを削除"
+            onClick={() => void handleDeleteImportedSong(selectedImportId)}
+          >
+            削除
+          </button>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xml,.musicxml,.mxl"
+          style={{ display: "none" }}
+          onChange={handleImportFileSelected}
+        />
+        <button id="import-musicxml-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
+          {isImporting ? "インポート中…" : "MusicXMLをインポート"}
+        </button>
+
         <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>キー（移動ドのDo）</label>
         <select value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
           {names.map((n, i) => (
@@ -1863,6 +2077,34 @@ export default function StaffToFretboard() {
           クリア
         </button>
       </div>
+
+      {lastImportWarnings && (
+        <div
+          id="import-warnings"
+          style={{
+            fontSize: "12px",
+            color: "var(--text-secondary)",
+            background: "var(--gray)",
+            borderRadius: 6,
+            padding: "6px 10px",
+            margin: "0 0 1rem",
+          }}
+        >
+          <details>
+            <summary style={{ cursor: "pointer" }}>
+              「{lastImportWarnings.fileName}」のインポート結果:{" "}
+              {lastImportWarnings.warnings.length === 0 ? "警告なし" : `${lastImportWarnings.warnings.length}件の警告（クリックで表示）`}
+            </summary>
+            {lastImportWarnings.warnings.length > 0 && (
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                {lastImportWarnings.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            )}
+          </details>
+        </div>
+      )}
 
       <div id="staff-wrap" style={{ overflowX: "auto" }}>
       <svg
@@ -2192,7 +2434,7 @@ export default function StaffToFretboard() {
                 {Array.from({ length: FRETS + 1 }, (_, f) => {
                   const absPitch = st.octave * 12 + st.open + f;
                   const pc = (st.open + f) % 12;
-                  const isMelody = activePitches.has(absPitch);
+                  const isMelody = displayedMelodyAbsPitches.has(absPitch);
                   // 同じポジションが実際のメロディ音符でもある場合は、通常濃度の
                   // メロディ表示を優先し、半透明のコードマーカーは重ねて描かない。
                   const isHarmonyTone = !isMelody && harmonyPitchClasses.has(pc);
