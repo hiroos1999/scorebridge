@@ -1952,7 +1952,7 @@ export default function StaffToFretboard({
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,.xml,.musicxml,.mxl"
+          accept="*/*"
           style={{ display: "none" }}
           onChange={handleImportFileSelected}
         />
