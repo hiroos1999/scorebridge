@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { TEMPLATES } from "@/lib/templates";
 import { parseMusicXmlFile } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
+import IconButton from "@/components/IconButton";
+import { ChordIcon, FlatIcon, RestIcon, SharpIcon } from "@/components/MusicIcons";
 
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
@@ -526,7 +529,11 @@ const TIME_SIG_OPTIONS: TimeSignature[] = [
 
 // 前回縮小した五線譜の高さ（見た目のスケール）を固定し、横幅だけが
 // 1グリッドの幅に応じて自然に伸びるようにするための基準高さ(px)。
-const STAFF_RENDER_HEIGHT_PX = 296;
+// viewBox(STAFF_VB_W/STAFF_VB_H)自体は変えず、CSS表示サイズのみ縮小して
+// 画面の縦占有量を抑える。クリック判定はgetBoundingClientRect()を使って
+// 描画サイズから動的に座標変換しているため、この値を変えても影響しない
+// （handleStaffClick参照）。
+const STAFF_RENDER_HEIGHT_PX = 240;
 const NOTE_AREA_MARGIN_RIGHT = 20;
 // 小節数はもう固定ではなく、measures配列の長さ（可変長）で決まる。
 // これは起動時・「クリア」時の初期小節数としてのみ使う。
@@ -1868,214 +1875,269 @@ export default function StaffToFretboard({
           font-display: block;
         }
         :root {
-          --border: #d3d1c7;
-          --border-strong: #b4b2a9;
-          --text-primary: #2c2c2a;
-          --text-secondary: #5f5e5a;
-          --surface-0: #f1efe8;
-          --danger: #D85A30; --on-danger:#4A1B0C;
-          --warning: #EF9F27; --on-warning:#412402;
-          --success: #1D9E75; --on-success:#04342C;
-          --pro: #7F77DD; --on-pro:#26215C;
-          --gray: #888780; --on-gray:#2C2C2A;
-          --accent: #378ADD; --on-accent:#042C53;
+          --border: rgba(255, 255, 255, 0.10);
+          --border-strong: rgba(255, 255, 255, 0.22);
+          --text-primary: #f2f0e8;
+          --text-secondary: #9a988f;
+          --surface-0: #171717;
+          --surface-1: #202020;
+          --surface-2: #2a2a28;
+          --danger: #ff6b57; --on-danger:#3a0f08;
+          --warning: #ffb84d; --on-warning:#3a2100;
+          --success: #3ddc97; --on-success:#04231a;
+          --pro: #9c93ff; --on-pro:#1c1840;
+          --gray: #8b8a82; --on-gray:#232220;
+          --accent: #C9A84C; --on-accent:#171717;
         }
         body {
           font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
           background: var(--surface-0);
           color: var(--text-primary);
-          max-width: 760px;
-          margin: 2rem auto;
-          padding: 0 1rem;
+          max-width: 900px;
+          margin: 0 auto;
+          padding: 0.75rem;
         }
         select, button {
-          height: 32px;
-          border-radius: 6px;
+          height: 36px;
+          border-radius: 8px;
           border: 1px solid var(--border-strong);
-          background: white;
+          background: var(--surface-1);
+          color: var(--text-primary);
           padding: 0 10px;
           font-size: 13px;
         }
-        button:hover { background: #f5f5f0; cursor: pointer; }
-        #controls { display:flex; align-items:center; gap:10px; margin: 0 0 1rem; flex-wrap: wrap; }
-        #legend { font-size: 12px; color: var(--text-secondary); margin-top: 1rem; }
+        button:hover { background: var(--surface-2); cursor: pointer; }
+        button:disabled { opacity: 0.4; cursor: default; }
+        #controls { display:flex; align-items:center; gap:6px; margin: 0 0 0.5rem; flex-wrap: wrap; }
+        .toolbar-group { display:flex; align-items:center; gap:6px; padding-right:8px; margin-right:2px; border-right: 1px solid var(--border); }
+        .toolbar-group:last-child { border-right: none; }
+        #legend { font-size: 12px; color: var(--text-secondary); margin-top: 0.5rem; }
         #fretboard-wrap { overflow-x: auto; }
+
+        .icon-btn {
+          width: 36px;
+          height: 36px;
+          padding: 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--text-secondary);
+          font-size: 18px;
+          line-height: 1;
+        }
+        .icon-btn:hover { color: var(--text-primary); border-color: var(--border-strong); }
+        .icon-btn-active {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: var(--on-accent);
+        }
+        .icon-btn-active:hover { background: var(--accent); color: var(--on-accent); }
+        .icon-btn-tip {
+          position: absolute;
+          bottom: calc(100% + 6px);
+          left: 50%;
+          transform: translateX(-50%);
+          background: var(--surface-2);
+          color: var(--text-primary);
+          border: 1px solid var(--border-strong);
+          border-radius: 6px;
+          padding: 3px 8px;
+          font-size: 12px;
+          white-space: nowrap;
+          pointer-events: none;
+          z-index: 10;
+        }
       `}</style>
 
-      <h2 style={{ fontSize: "18px", fontWeight: 500 }}>五線譜 → ギター指板 プロトタイプ</h2>
+      <h2 style={{ fontSize: "15px", fontWeight: 500, margin: "0 0 0.5rem", color: "var(--text-secondary)" }}>
+        五線譜 → ギター指板 プロトタイプ
+      </h2>
 
       <div id="controls">
-        <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>テンプレート</label>
-        <select
-          id="template-select"
-          defaultValue=""
-          onChange={(e) => {
-            if (!e.target.value) return;
-            handleLoadTemplate(e.target.value);
-            e.target.value = ""; // 読み込み後は「未選択」に戻す(measuresは通常のstateとして編集可能)
-          }}
-        >
-          <option value="">選択…</option>
-          {TEMPLATES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-
-        <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>マイインポート</label>
-        <select
-          id="my-imports-select"
-          value={selectedImportId}
-          onChange={(e) => {
-            setSelectedImportId(e.target.value);
-            if (e.target.value) handleLoadImportedSong(e.target.value);
-          }}
-        >
-          <option value="">{importedSongs.length === 0 ? "（まだありません）" : "選択…"}</option>
-          {importedSongs.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        {selectedImportId && (
-          <button
-            id="my-imports-delete-btn"
-            title="選択中のマイインポートを削除"
-            onClick={() => void handleDeleteImportedSong(selectedImportId)}
+        <div className="toolbar-group">
+          <select
+            id="template-select"
+            defaultValue=""
+            aria-label="テンプレート"
+            onChange={(e) => {
+              if (!e.target.value) return;
+              handleLoadTemplate(e.target.value);
+              e.target.value = ""; // 読み込み後は「未選択」に戻す(measuresは通常のstateとして編集可能)
+            }}
           >
-            削除
-          </button>
-        )}
+            <option value="">曲テンプレート…</option>
+            {TEMPLATES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="*/*"
-          style={{ display: "none" }}
-          onChange={handleImportFileSelected}
-        />
-        <button id="import-musicxml-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
-          {isImporting ? "インポート中…" : "MusicXMLをインポート"}
-        </button>
+          <select
+            id="my-imports-select"
+            aria-label="マイインポート"
+            value={selectedImportId}
+            onChange={(e) => {
+              setSelectedImportId(e.target.value);
+              if (e.target.value) handleLoadImportedSong(e.target.value);
+            }}
+          >
+            <option value="">{importedSongs.length === 0 ? "マイインポート（まだありません）" : "マイインポート…"}</option>
+            {importedSongs.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          {selectedImportId && (
+            <IconButton
+              id="my-imports-delete-btn"
+              label="選択中のマイインポートを削除"
+              icon={<Trash2 size={16} />}
+              onClick={() => void handleDeleteImportedSong(selectedImportId)}
+            />
+          )}
 
-        <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>キー（移動ドのDo）</label>
-        <select value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
-          {names.map((n, i) => (
-            <option key={i} value={i}>
-              {n}
-            </option>
-          ))}
-        </select>
-        <button
-          id="accidental-toggle"
-          onClick={() => setUseFlats((prev) => !prev)}
-        >
-          {useFlats ? "#表記" : "♭表記"}
-        </button>
-        <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>拍子</label>
-        <select
-          value={`${timeSig.numerator}/${timeSig.denominator}`}
-          onChange={(e) => {
-            const [num, den] = e.target.value.split("/").map(Number);
-            handleTimeSigChange(num, den);
-          }}
-        >
-          {TIME_SIG_OPTIONS.map((opt) => (
-            <option key={`${opt.numerator}/${opt.denominator}`} value={`${opt.numerator}/${opt.denominator}`}>
-              {opt.numerator}/{opt.denominator}
-            </option>
-          ))}
-        </select>
-        <button
-          id="rest-toggle"
-          onClick={() => setRestMode((prev) => !prev)}
-          style={restMode ? { background: "var(--accent)", color: "white" } : undefined}
-        >
-          休符
-        </button>
-        <button
-          id="measure-prev-btn"
-          onClick={() => {
-            setCurrentMeasureIndex((i) => Math.max(0, i - 1));
-            // ローカルなstartGridは小節をまたいで一意ではないため、選択状態は
-            // 小節移動のたびにリセットする（別の小節の音符が誤って選択中扱いに
-            // ならないようにする）。
-            setSelectedNoteKey(null);
-            setSelectedRowIdx(null);
-            setChordTargetGrid(0);
-          }}
-          disabled={currentMeasureIndex === 0}
-        >
-          ◀
-        </button>
-        <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
-          {currentMeasureIndex + 1}/{measures.length}小節目
-        </span>
-        <button
-          id="measure-next-btn"
-          onClick={() => {
-            setCurrentMeasureIndex((i) => Math.min(measures.length - 1, i + 1));
-            setSelectedNoteKey(null);
-            setSelectedRowIdx(null);
-            setChordTargetGrid(0);
-          }}
-          disabled={currentMeasureIndex === measures.length - 1}
-        >
-          ▶
-        </button>
-        <button id="measure-add-btn" onClick={handleAddMeasure} title="末尾に小節を追加">
-          ＋
-        </button>
-        <button
-          id="measure-delete-btn"
-          onClick={handleDeleteMeasure}
-          disabled={measures.length <= 1}
-          title="表示中の小節を削除"
-        >
-          削除
-        </button>
-        <label style={{ fontSize: "13px", color: "var(--text-secondary)" }}>コード</label>
-        <select id="chord-root-select" value={chordRoot} onChange={(e) => setChordRoot(parseInt(e.target.value, 10))}>
-          {names.map((n, i) => (
-            <option key={i} value={i}>
-              {n}
-            </option>
-          ))}
-        </select>
-        <select id="chord-type-select" value={chordType} onChange={(e) => setChordType(e.target.value)}>
-          {Object.keys(CHORD_TYPES).map((type) => (
-            <option key={type} value={type}>
-              {CHORD_TYPE_LABELS[type]}
-            </option>
-          ))}
-        </select>
-        <select
-          id="chord-inversion-select"
-          value={chordInversion}
-          onChange={(e) => setChordInversion(parseInt(e.target.value, 10))}
-        >
-          {Array.from({ length: CHORD_TYPES[chordType].length }, (_, i) => i).map((inv) => (
-            <option key={inv} value={inv}>
-              {INVERSION_LABELS[inv]}
-            </option>
-          ))}
-        </select>
-        <button id="chord-place-btn" onClick={handlePlaceChord}>
-          和音を配置
-        </button>
-        <button
-          id="play-btn"
-          style={{ marginLeft: "auto" }}
-          onClick={handlePlayClick}
-          disabled={!samplesReady && !isPlaying}
-        >
-          {isPlaying ? "■ 停止" : samplesReady ? "▶ Play" : "音源読み込み中…"}
-        </button>
-        <button id="clear-btn" onClick={handleClear}>
-          クリア
-        </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="*/*"
+            style={{ display: "none" }}
+            onChange={handleImportFileSelected}
+          />
+          <IconButton
+            id="import-musicxml-btn"
+            label={isImporting ? "インポート中…" : "MusicXMLをインポート"}
+            icon={<Upload size={16} />}
+            disabled={isImporting}
+            onClick={() => fileInputRef.current?.click()}
+          />
+        </div>
+
+        <div className="toolbar-group">
+          <select aria-label="キー（移動ドのDo）" value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
+            {names.map((n, i) => (
+              <option key={i} value={i}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <IconButton
+            id="accidental-toggle"
+            label={useFlats ? "♯表記に切り替え" : "♭表記に切り替え"}
+            icon={useFlats ? <SharpIcon /> : <FlatIcon />}
+            onClick={() => setUseFlats((prev) => !prev)}
+          />
+          <select
+            aria-label="拍子"
+            value={`${timeSig.numerator}/${timeSig.denominator}`}
+            onChange={(e) => {
+              const [num, den] = e.target.value.split("/").map(Number);
+              handleTimeSigChange(num, den);
+            }}
+          >
+            {TIME_SIG_OPTIONS.map((opt) => (
+              <option key={`${opt.numerator}/${opt.denominator}`} value={`${opt.numerator}/${opt.denominator}`}>
+                {opt.numerator}/{opt.denominator}
+              </option>
+            ))}
+          </select>
+          <IconButton
+            id="rest-toggle"
+            label="休符を配置"
+            icon={<RestIcon />}
+            active={restMode}
+            onClick={() => setRestMode((prev) => !prev)}
+          />
+        </div>
+
+        <div className="toolbar-group">
+          <IconButton
+            id="measure-prev-btn"
+            label="前の小節"
+            icon={<ChevronLeft size={18} />}
+            disabled={currentMeasureIndex === 0}
+            onClick={() => {
+              setCurrentMeasureIndex((i) => Math.max(0, i - 1));
+              // ローカルなstartGridは小節をまたいで一意ではないため、選択状態は
+              // 小節移動のたびにリセットする（別の小節の音符が誤って選択中扱いに
+              // ならないようにする）。
+              setSelectedNoteKey(null);
+              setSelectedRowIdx(null);
+              setChordTargetGrid(0);
+            }}
+          />
+          <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+            {currentMeasureIndex + 1}/{measures.length}小節目
+          </span>
+          <IconButton
+            id="measure-next-btn"
+            label="次の小節"
+            icon={<ChevronRight size={18} />}
+            disabled={currentMeasureIndex === measures.length - 1}
+            onClick={() => {
+              setCurrentMeasureIndex((i) => Math.min(measures.length - 1, i + 1));
+              setSelectedNoteKey(null);
+              setSelectedRowIdx(null);
+              setChordTargetGrid(0);
+            }}
+          />
+          <IconButton id="measure-add-btn" label="末尾に小節を追加" icon={<Plus size={16} />} onClick={handleAddMeasure} />
+          <IconButton
+            id="measure-delete-btn"
+            label="表示中の小節を削除"
+            icon={<Trash2 size={16} />}
+            disabled={measures.length <= 1}
+            onClick={handleDeleteMeasure}
+          />
+        </div>
+
+        <div className="toolbar-group">
+          <select
+            id="chord-root-select"
+            aria-label="コードのルート音"
+            value={chordRoot}
+            onChange={(e) => setChordRoot(parseInt(e.target.value, 10))}
+          >
+            {names.map((n, i) => (
+              <option key={i} value={i}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <select id="chord-type-select" aria-label="コードの種類" value={chordType} onChange={(e) => setChordType(e.target.value)}>
+            {Object.keys(CHORD_TYPES).map((type) => (
+              <option key={type} value={type}>
+                {CHORD_TYPE_LABELS[type]}
+              </option>
+            ))}
+          </select>
+          <select
+            id="chord-inversion-select"
+            aria-label="コードの転回形"
+            value={chordInversion}
+            onChange={(e) => setChordInversion(parseInt(e.target.value, 10))}
+          >
+            {Array.from({ length: CHORD_TYPES[chordType].length }, (_, i) => i).map((inv) => (
+              <option key={inv} value={inv}>
+                {INVERSION_LABELS[inv]}
+              </option>
+            ))}
+          </select>
+          <IconButton id="chord-place-btn" label="和音を配置" icon={<ChordIcon />} onClick={handlePlaceChord} />
+        </div>
+
+        <div className="toolbar-group" style={{ marginLeft: "auto", borderRight: "none", paddingRight: 0 }}>
+          <IconButton
+            id="play-btn"
+            label={isPlaying ? "停止" : samplesReady ? "再生" : "音源読み込み中…"}
+            icon={isPlaying ? <Square size={16} /> : <Play size={16} />}
+            active={isPlaying}
+            disabled={!samplesReady && !isPlaying}
+            onClick={handlePlayClick}
+          />
+          <IconButton id="clear-btn" label="クリア" icon={<Eraser size={16} />} onClick={handleClear} />
+        </div>
       </div>
 
       {lastImportWarnings && (
@@ -2084,10 +2146,11 @@ export default function StaffToFretboard({
           style={{
             fontSize: "12px",
             color: "var(--text-secondary)",
-            background: "var(--gray)",
+            background: "var(--surface-1)",
+            border: "1px solid var(--border)",
             borderRadius: 6,
             padding: "6px 10px",
-            margin: "0 0 1rem",
+            margin: "0 0 0.5rem",
           }}
         >
           <details>
@@ -2314,7 +2377,7 @@ export default function StaffToFretboard({
       </svg>
       </div>
 
-      <div style={{ margin: "0 0 1.5rem", height: "72px", overflowX: "auto" }}>
+      <div style={{ margin: "0 0 0.5rem", height: "72px", overflowX: "auto" }}>
       <div style={{ position: "relative", width: `${staffRenderedWidth}px`, height: "72px" }}>
         {(() => {
           // notesは既に表示中の小節(measures[currentMeasureIndex].notes)にスコープ

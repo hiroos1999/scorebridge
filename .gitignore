@@ -43,3 +43,6 @@ next-env.d.ts
 # dev-only fixtures for local technical verification (e.g. copyrighted MusicXML
 # import test data). Never meant to be committed or published.
 /dev-fixtures/
+
+# locally downloaded media used for manual testing; never meant to be committed
+*.mp4
