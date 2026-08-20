@@ -1,8 +1,8 @@
 {
   "name": "ScoreBridge",
   "short_name": "ScoreBridge",
-  "theme_color": "#171717",
-  "background_color": "#171717",
+  "theme_color": "#1a1d21",
+  "background_color": "#1a1d21",
   "display": "standalone",
   "start_url": "/",
   "icons": [

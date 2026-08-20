@@ -1879,15 +1879,15 @@ export default function StaffToFretboard({
           --border-strong: rgba(255, 255, 255, 0.22);
           --text-primary: #f2f0e8;
           --text-secondary: #9a988f;
-          --surface-0: #171717;
-          --surface-1: #202020;
-          --surface-2: #2a2a28;
+          --surface-0: #1a1d21;
+          --surface-1: #22262b;
+          --surface-2: #2b3036;
           --danger: #ff6b57; --on-danger:#3a0f08;
           --warning: #ffb84d; --on-warning:#3a2100;
           --success: #3ddc97; --on-success:#04231a;
           --pro: #9c93ff; --on-pro:#1c1840;
           --gray: #8b8a82; --on-gray:#232220;
-          --accent: #C9A84C; --on-accent:#171717;
+          --accent: #C9A84C; --on-accent:#1a1d21;
         }
         body {
           font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
@@ -1948,10 +1948,6 @@ export default function StaffToFretboard({
           z-index: 10;
         }
       `}</style>
-
-      <h2 style={{ fontSize: "15px", fontWeight: 500, margin: "0 0 0.5rem", color: "var(--text-secondary)" }}>
-        五線譜 → ギター指板 プロトタイプ
-      </h2>
 
       <div id="controls">
         <div className="toolbar-group">
