@@ -1875,19 +1875,19 @@ export default function StaffToFretboard({
           font-display: block;
         }
         :root {
-          --border: rgba(255, 255, 255, 0.10);
-          --border-strong: rgba(255, 255, 255, 0.22);
-          --text-primary: #f2f0e8;
-          --text-secondary: #9a988f;
-          --surface-0: #1a1d21;
-          --surface-1: #22262b;
-          --surface-2: #2b3036;
-          --danger: #ff6b57; --on-danger:#3a0f08;
-          --warning: #ffb84d; --on-warning:#3a2100;
-          --success: #3ddc97; --on-success:#04231a;
-          --pro: #9c93ff; --on-pro:#1c1840;
-          --gray: #8b8a82; --on-gray:#232220;
-          --accent: #C9A84C; --on-accent:#1a1d21;
+          --border: rgba(42, 39, 33, 0.12);
+          --border-strong: rgba(42, 39, 33, 0.28);
+          --text-primary: #2a2721;
+          --text-secondary: #6c6455;
+          --surface-0: #f5f0e0;
+          --surface-1: #ece2c9;
+          --surface-2: #e0d3ae;
+          --danger: #d6412a; --on-danger:#fff2ec;
+          --warning: #b5730c; --on-warning:#fff8ea;
+          --success: #157a55; --on-success:#e9fbf3;
+          --pro: #5b52c9; --on-pro:#f1f0ff;
+          --gray: #6c6455; --on-gray:#f5f0e0;
+          --accent: #C9A84C; --on-accent:#2a2721;
         }
         body {
           font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
@@ -2369,6 +2369,8 @@ export default function StaffToFretboard({
         <polygon
           points={`${displayXForNote(chordTargetGrid) - 6},1 ${displayXForNote(chordTargetGrid) + 6},1 ${displayXForNote(chordTargetGrid)},13`}
           fill="var(--accent)"
+          stroke="var(--text-primary)"
+          strokeWidth={0.75}
         />
       </svg>
       </div>
