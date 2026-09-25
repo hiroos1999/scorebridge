@@ -9,13 +9,15 @@
 // 対応範囲はPython版と同じ:
 //   - divisions基準のdurationをグリッド単位（4分音符=4）に変換
 //   - <tie>/<slur>による同一小節内タイの統合、小節をまたぐタイは警告付きで別音符のまま
-//   - <time-modification>(連符)は警告のみ（グリッド系が2の冪乗細分のみのため丸められる）
+//   - <time-modification>が3:2の連符（3連符）はNote.triplet=trueとして正確なタイミングで
+//     取り込む。それ以外の比率の連符（5連符等）は警告付きでグリッドに丸める
 //   - <harmony>をHarmony型に変換（<kind>はlib/chords.tsのCHORD_TYPESキーにマッピング、
 //     未対応の種類は警告してスキップ）
 //   - 曲頭のアウフタクト（弱起）は先頭に休符を足して1小節分に揃える
 //   - <repeat>/<ending>（繰り返し記号・番括弧）を実際の演奏順に展開
 
 import type { Harmony, Measure, Note, TimeSignature } from "@/components/StaffToFretboard";
+import { noteSpan, snapGrid } from "@/lib/grid";
 
 export type MusicXmlImportResult = {
   root: number;
@@ -227,6 +229,7 @@ type RawNote = {
   accidental: number | null;
   tieStart: boolean;
   tieStop: boolean;
+  triplet: boolean;
 };
 type RawHarmony = { offsetGrid: number; root: number; kind: string; inversion: number };
 
@@ -268,12 +271,20 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
     let endingNumbers: Set<number> | null = null;
 
     const xmlDurToGrids = (xmlDuration: number) => Math.max(Math.round((xmlDuration / divisions) * gridsPerQuarter), 1);
+    // 3連符を含む小節では位置が1/3グリッド刻みになるため、backup/forwardは
+    // 整数に丸めず1/3刻みで扱う（整数グリッドの曲では従来と同じ値になる）。
+    const xmlDurToSnappedGrids = (xmlDuration: number) =>
+      Math.max(snapGrid((xmlDuration / divisions) * gridsPerQuarter), 1 / 3);
 
     for (const child of Array.from(measureEl.children)) {
       if (child.tagName === "backup") {
-        grid -= xmlDurToGrids(Number(requireText(directChild(child, "duration"), `小節${mIdx + 1}: backupのduration`)));
+        grid = snapGrid(
+          grid - xmlDurToSnappedGrids(Number(requireText(directChild(child, "duration"), `小節${mIdx + 1}: backupのduration`)))
+        );
       } else if (child.tagName === "forward") {
-        grid += xmlDurToGrids(Number(requireText(directChild(child, "duration"), `小節${mIdx + 1}: forwardのduration`)));
+        grid = snapGrid(
+          grid + xmlDurToSnappedGrids(Number(requireText(directChild(child, "duration"), `小節${mIdx + 1}: forwardのduration`)))
+        );
       } else if (child.tagName === "barline") {
         const repeatEl = directChild(child, "repeat");
         if (repeatEl) {
@@ -323,16 +334,33 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
           warnings.push(`小節${mIdx + 1}: duration無しのnote要素をスキップ（装飾音符の可能性）`);
           continue;
         }
-        const duration = xmlDurToGrids(Number(textOf(durEl)));
-
         if (directChild(child, "chord")) {
           warnings.push(`小節${mIdx + 1}: <chord/>（和音）は単旋律採譜スクリプトでは未対応のため無視しました`);
           continue;
         }
 
+        // <time-modification>（連符）: 3:2（3連符）だけはNote.tripletで正確に表せるので、
+        // 実際の長さ(duration)を3/2倍した記譜上の音価をdurationとして持たせる。
+        // それ以外の比率はグリッドに丸める（既知の制約として警告する）。
+        const timeModEl = directChild(child, "time-modification");
+        const actualNotes = Number(textOf(directChild(timeModEl, "actual-notes")) ?? 0);
+        const normalNotes = Number(textOf(directChild(timeModEl, "normal-notes")) ?? 0);
+        const triplet = timeModEl !== null && actualNotes === 3 && normalNotes === 2;
+        if (timeModEl !== null && !triplet) {
+          warnings.push(
+            `小節${mIdx + 1}: ${actualNotes}:${normalNotes}の連符を検出しました。3連符以外の連符には未対応のため、` +
+              "丸められたタイミングで取り込まれます（既知の制約）"
+          );
+        }
+        const xmlDuration = Number(textOf(durEl));
+        const duration = triplet
+          ? Math.max(Math.round((xmlDuration / divisions) * gridsPerQuarter * 1.5), 1)
+          : xmlDurToGrids(xmlDuration);
+        const span = noteSpan({ duration, triplet });
+
         if (directChild(child, "rest")) {
-          rawNotes.push({ startGrid: grid, duration, isRest: true, rowIdx: null, accidental: null, tieStart: false, tieStop: false });
-          grid += duration;
+          rawNotes.push({ startGrid: grid, duration, isRest: true, rowIdx: null, accidental: null, tieStart: false, tieStop: false, triplet });
+          grid = snapGrid(grid + span);
           continue;
         }
 
@@ -352,7 +380,7 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
             `小節${mIdx + 1}: ${step}${octave}はrows配列の範囲外(C6〜E3)のため変換できませんでした` +
               "（最も近い音に手動で置き換えてください）"
           );
-          grid += duration;
+          grid = snapGrid(grid + span);
           continue;
         }
 
@@ -360,19 +388,12 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
         // （OMRツールがタイをslurとして出力することがあるため）。
         const notationsEl = directChild(child, "notations");
         const slurEls = directChildren(notationsEl, "slur");
-        const tupletEls = directChildren(notationsEl, "tuplet");
-        if (tupletEls.length > 0) {
-          warnings.push(
-            `小節${mIdx + 1}: 連符（tuplet）を検出しました。グリッド系は2の冪乗細分のみのため、` +
-              "丸められたタイミングで取り込まれます（既知の制約）"
-          );
-        }
         const tieEls = directChildren(child, "tie");
         const tieStart = tieEls.some((t) => t.getAttribute("type") === "start") || slurEls.some((s) => s.getAttribute("type") === "start");
         const tieStop = tieEls.some((t) => t.getAttribute("type") === "stop") || slurEls.some((s) => s.getAttribute("type") === "stop");
 
-        rawNotes.push({ startGrid: grid, duration, isRest: false, rowIdx: ROW_INDEX[key], accidental, tieStart, tieStop });
-        grid += duration;
+        rawNotes.push({ startGrid: grid, duration, isRest: false, rowIdx: ROW_INDEX[key], accidental, tieStart, tieStop, triplet });
+        grid = snapGrid(grid + span);
       }
     }
 
@@ -386,10 +407,10 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
       const gridsPerMeasureForPickup = gridsPerQuarter * Math.floor(((timeBeats ?? 4) * 4) / (timeBeatType ?? 4));
       const contentGrids = grid;
       if (contentGrids > 0 && contentGrids < gridsPerMeasureForPickup && (isImplicit || contentGrids > 0)) {
-        const padding = gridsPerMeasureForPickup - contentGrids;
-        rawNotes.forEach((n) => (n.startGrid += padding));
-        harmonies.forEach((h) => (h.offsetGrid += padding));
-        rawNotes.unshift({ startGrid: 0, duration: padding, isRest: true, rowIdx: null, accidental: null, tieStart: false, tieStop: false });
+        const padding = snapGrid(gridsPerMeasureForPickup - contentGrids);
+        rawNotes.forEach((n) => (n.startGrid = snapGrid(n.startGrid + padding)));
+        harmonies.forEach((h) => (h.offsetGrid = snapGrid(h.offsetGrid + padding)));
+        rawNotes.unshift({ startGrid: 0, duration: padding, isRest: true, rowIdx: null, accidental: null, tieStart: false, tieStop: false, triplet: false });
         warnings.push(
           `小節1: アウフタクト（弱起）を検出しました。${contentGrids}グリッド分の実音の前に${padding}グリッドの休符を挿入し、` +
             "1小節分の長さに揃えました（可変長の小節はデータモデル上表現できないため。再生タイミングは正しく、見た目だけ本来の記譜と異なります）"
@@ -422,13 +443,23 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
     while (i < rawNotes.length) {
       const n = rawNotes[i];
       const nxt = rawNotes[i + 1];
-      if (!n.isRest && n.tieStart && nxt && !nxt.isRest && nxt.rowIdx === n.rowIdx && nxt.accidental === n.accidental) {
+      // 3連符と通常の音符のタイは、1つの音価（durationとtripletの組）では表せないため結合しない。
+      if (
+        !n.isRest &&
+        n.tieStart &&
+        nxt &&
+        !nxt.isRest &&
+        nxt.rowIdx === n.rowIdx &&
+        nxt.accidental === n.accidental &&
+        nxt.triplet === n.triplet
+      ) {
         merged.push({
           startGrid: n.startGrid,
           duration: n.duration + nxt.duration,
           isRest: false,
           rowIdxList: [n.rowIdx as number],
           accidentals: { [n.rowIdx as number]: n.accidental as number },
+          ...(n.triplet ? { triplet: true } : {}),
         });
         i += 2;
         continue;
@@ -439,8 +470,9 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
             "Note型では1音に結合できないため2つの別音符のまま出力します。再生時に本来無いはずの再アタックが入ります。"
         );
       }
+      const tripletProp = n.triplet ? { triplet: true } : {};
       if (n.isRest) {
-        merged.push({ startGrid: n.startGrid, duration: n.duration, isRest: true, rowIdxList: [], accidentals: {} });
+        merged.push({ startGrid: n.startGrid, duration: n.duration, isRest: true, rowIdxList: [], accidentals: {}, ...tripletProp });
       } else {
         merged.push({
           startGrid: n.startGrid,
@@ -448,6 +480,7 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
           isRest: false,
           rowIdxList: [n.rowIdx as number],
           accidentals: { [n.rowIdx as number]: n.accidental as number },
+          ...tripletProp,
         });
       }
       i += 1;

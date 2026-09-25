@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
+import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES } from "@/lib/templates";
 import { parseMusicXmlFile } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
 import IconButton from "@/components/IconButton";
-import { ChordIcon, FlatIcon, RestIcon, SharpIcon } from "@/components/MusicIcons";
+import { ChordIcon, FlatIcon, RestIcon, SharpIcon, TripletIcon } from "@/components/MusicIcons";
 
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
@@ -286,6 +287,9 @@ export type Note = {
   isRest: boolean;
   rowIdxList: number[]; // 単音なら要素1つ、手動で積み上げた和音なら複数
   accidentals: Record<number, number>; // rowIdx -> 臨時記号（未設定キーは0扱い）
+  // 3連符かどうか。durationは記譜上の音価のまま、実際に占める長さはその2/3になる
+  // （lib/grid.tsのnoteSpan参照）。省略時は通常の音符（既存データとの互換のため任意）。
+  triplet?: boolean;
 };
 
 // コード選択UIで配置されるコードシンボル。MusicXMLのharmony要素に相当し、
@@ -639,6 +643,8 @@ export default function StaffToFretboard({
   // 音価を次の新規配置にも引き継ぐ（起動時・クリア後はDEFAULT_DURATIONに戻す）。
   const [defaultDuration, setDefaultDuration] = useState(DEFAULT_DURATION);
   const [restMode, setRestMode] = useState(false);
+  // ONの間、新規配置する音符・休符を3連符にする（休符モードと同様のトグル）。
+  const [tripletMode, setTripletMode] = useState(false);
   const [fullFeedback, setFullFeedback] = useState(false);
   const [currentMeasureIndex, setCurrentMeasureIndex] = useState(0);
   // MusicXMLインポート（サーバーには送信せず、ブラウザのIndexedDBにのみ保存する）。
@@ -905,7 +911,7 @@ export default function StaffToFretboard({
       const measureStartMs = measureIndex * measureDurationMs;
       m.notes.forEach((note) => {
         const atMs = measureStartMs + gridToMs(note.startGrid);
-        const toneSec = durationToMs(note.duration) / 1000;
+        const toneSec = durationToMs(noteSpan(note)) / 1000;
         events.push({ atMs, endMs: atMs + toneSec * 1000, measureIndex, kind: "note", note });
       });
       // harmonyは音価を持たないため、そのoffsetGridから「次のharmonyのoffsetGrid
@@ -1065,7 +1071,7 @@ export default function StaffToFretboard({
     setMeasures((prev) =>
       prev.map((m) => ({
         ...m,
-        notes: m.notes.filter((n) => n.startGrid + n.duration <= newGridsPerMeasure),
+        notes: m.notes.filter((n) => snapGrid(n.startGrid + noteSpan(n)) <= newGridsPerMeasure),
         harmonies: m.harmonies.filter((h) => h.offsetGrid < newGridsPerMeasure),
       }))
     );
@@ -1082,12 +1088,19 @@ export default function StaffToFretboard({
     // 小節線より右側（次の小節のプレビュー領域）のクリックは無視する。
     // プレビューは表示のみで、クリック・編集の対象は表示中の小節に限る。
     if (x > barlineX) return;
-    let grid = Math.round((x - LEFT) / GRID_UNIT_WIDTH);
-    grid = Math.max(0, Math.min(gridsPerMeasure - 1, grid));
+    // 3連符はstartGridが1/3グリッド刻みになるため、グリッドへの丸めはせずに
+    // 小数のままのグリッド位置で当たり判定する。各音符の判定範囲は、符頭の位置
+    // (startGrid)の少し手前から始まるよう、占める長さの半分(最大0.5グリッド)だけ
+    // 左にずらす（整数グリッドの音符では、従来のMath.roundによる判定と一致する）。
+    const rawGrid = Math.max(0, Math.min(gridsPerMeasure - 1, (x - LEFT) / GRID_UNIT_WIDTH));
     let rowIdx = Math.round((y - rows[0].y) / 10);
     rowIdx = Math.max(0, Math.min(rows.length - 1, rowIdx));
 
-    const covering = notes.find((n) => grid >= n.startGrid && grid < n.startGrid + n.duration);
+    const covering = notes.find((n) => {
+      const span = noteSpan(n);
+      const lead = Math.min(0.5, span / 2);
+      return rawGrid >= n.startGrid - lead && rawGrid < n.startGrid + span - lead;
+    });
     if (covering) {
       if (restMode) {
         if (covering.isRest) {
@@ -1150,21 +1163,29 @@ export default function StaffToFretboard({
     // 空きエリアをクリックした場合、クリックしたx座標(グリッド)は使わず、
     // 現在配置されている音符・休符のうち一番右端（末尾）の直後の
     // 空きグリッドに自動追加する。y座標（音高）だけがクリック内容を左右する。
-    const appendGrid = notes.length === 0 ? 0 : Math.max(...notes.map((n) => n.startGrid + n.duration));
-    if (appendGrid >= gridsPerMeasure) {
+    const appendGrid = notes.length === 0 ? 0 : Math.max(...notes.map((n) => snapGrid(n.startGrid + noteSpan(n))));
+    const remaining = snapGrid(gridsPerMeasure - appendGrid);
+    // 3連符モードでは、記譜上の音価(defaultDuration)の3連符が残りに収まらなければ、
+    // 収まる中で一番長い標準音価の3連符にする。通常の音符は従来通り残りグリッド数で
+    // 切り詰める（3連符の後ろで残りが1/3刻みの端数になった場合は整数に切り捨てる）。
+    const duration = tripletMode
+      ? (DURATION_CYCLE.find((d) => d <= defaultDuration && noteSpan({ duration: d, triplet: true }) <= remaining) ?? 0)
+      : Math.min(defaultDuration, Math.floor(remaining));
+    if (duration <= 0) {
       setFullFeedback(true);
       setTimeout(() => setFullFeedback(false), 250);
       return;
     }
-    const duration = Math.min(defaultDuration, gridsPerMeasure - appendGrid);
+    const tripletProp = tripletMode ? { triplet: true } : {};
     const newNote: Note = restMode
-      ? { startGrid: appendGrid, duration, isRest: true, rowIdxList: [], accidentals: {} }
+      ? { startGrid: appendGrid, duration, isRest: true, rowIdxList: [], accidentals: {}, ...tripletProp }
       : {
           startGrid: appendGrid,
           duration,
           isRest: false,
           rowIdxList: [rowIdx],
           accidentals: { [rowIdx]: defaultAccidentalForRow(rowIdx) },
+          ...tripletProp,
         };
     updateMeasureNotes(currentMeasureIndex, (ns) => [...ns, newNote].sort((a, b) => a.startGrid - b.startGrid));
     setSelectedNoteKey(appendGrid);
@@ -1227,15 +1248,17 @@ export default function StaffToFretboard({
       if (idx === -1) return prev;
       const note = sorted[idx];
       const nextNote = sorted[idx + 1];
-      const maxAllowed = nextNote ? nextNote.startGrid - note.startGrid : gridsPerMeasure - note.startGrid;
+      const maxAllowed = snapGrid((nextNote ? nextNote.startGrid : gridsPerMeasure) - note.startGrid);
+      // 3連符は記譜上の音価のまま切り替え、実際に占める長さ(2/3)で収まるかを判定する。
+      const fits = (d: number) => noteSpan({ duration: d, triplet: note.triplet }) <= maxAllowed;
 
       // 直後の候補が入らない場合、そこで諦めず、入る音価が見つかるまで
       // サイクル順に探し続ける（入らない値をスキップして先に進む）。
       let candidate = nextDurationInCycle(note.duration);
-      for (let i = 0; i < DURATION_CYCLE.length && candidate > maxAllowed; i++) {
+      for (let i = 0; i < DURATION_CYCLE.length && !fits(candidate); i++) {
         candidate = nextDurationInCycle(candidate);
       }
-      if (candidate > maxAllowed) return prev;
+      if (!fits(candidate)) return prev;
       // 音価切り替えボタンで変更した音価を、次に新規配置する音符・休符のデフォルトにも引き継ぐ。
       setDefaultDuration(candidate);
       return sorted.map((n, i) => (i === idx ? { ...n, duration: candidate } : n));
@@ -1250,6 +1273,7 @@ export default function StaffToFretboard({
     setSelectedNoteKey(null);
     setSelectedRowIdx(null);
     setDefaultDuration(DEFAULT_DURATION);
+    setTripletMode(false);
     setSelectedImportId("");
   }
 
@@ -1540,7 +1564,9 @@ export default function StaffToFretboard({
     let current: BeamCandidate[] = [];
     let currentBeatIdx: number | null = null;
     for (const c of candidates) {
-      const beamable = !c.note.isRest && c.note.duration <= 8;
+      // 連桁の対象は4分音符未満（8分・付点8分・16分）のみ。4分音符の3連符同士が
+      // 同じ拍に収まって連桁でつながってしまわないよう、音価で明示的に絞る。
+      const beamable = !c.note.isRest && c.note.duration < 4;
       if (!beamable) {
         if (current.length) groups.push(current);
         current = [];
@@ -1550,7 +1576,7 @@ export default function StaffToFretboard({
       // note.startGridは自分が属する小節内のローカルなグリッド番号なので、そのまま使う。
       const beatIdx = Math.floor(c.note.startGrid / beamGroupingUnit);
       const prev = current[current.length - 1];
-      const contiguous = !prev || prev.note.startGrid + prev.note.duration === c.note.startGrid;
+      const contiguous = !prev || snapGrid(prev.note.startGrid + noteSpan(prev.note)) === c.note.startGrid;
       if (current.length > 0 && beatIdx === currentBeatIdx && contiguous) {
         current.push(c);
       } else {
@@ -1706,6 +1732,10 @@ export default function StaffToFretboard({
     }));
     const beamGroups = computeBeamGroups(candidates).filter((g) => g.length >= 2);
     const beamedStartGrids = new Set(beamGroups.flatMap((g) => g.map((c) => c.note.startGrid)));
+    const beamGroupIndexByStartGrid = new Map(
+      beamGroups.flatMap((g, gi) => g.map((c) => [c.note.startGrid, gi] as const))
+    );
+    const tripletGroups = computeTripletGroups(notesToRender);
 
     return (
       <>
@@ -1790,6 +1820,101 @@ export default function StaffToFretboard({
         {beamGroups.map((group, i) => (
           <g key={`beam-${i}`}>{renderBeamedGroup(group)}</g>
         ))}
+        {tripletGroups.map((group, i) => {
+          // 1本の連桁がちょうどこのグループの音符だけをつないでいる場合は、連桁自体が
+          // まとまりを示すので数字「3」だけを出し、そうでなければ括弧も描く。
+          const beamIdx = beamGroupIndexByStartGrid.get(group[0].startGrid);
+          const numberOnly =
+            beamIdx !== undefined &&
+            beamGroups[beamIdx].length === group.length &&
+            group.every((n) => beamGroupIndexByStartGrid.get(n.startGrid) === beamIdx);
+          return (
+            <g key={`triplet-${i}`} pointerEvents="none">
+              {renderTripletBracket(group, xForNote, numberOnly)}
+            </g>
+          );
+        })}
+      </>
+    );
+  }
+
+  // 連続する3連符を、括弧（数字「3」）でくくる単位にまとめる。記譜上の音価の
+  // 合計が3の倍数になった時点（＝実際の長さがちょうど整数グリッド、8分3連なら
+  // 4分音符1つ分）で1グループを閉じる。これで8分3連×3・4分3連×3・4分3連+8分3連
+  // などの組み合わせをそのまま区切れる。3連符でない音符や隙間を挟んだ場合は
+  // その時点でグループを打ち切る（不完全なグループにも「3」は表示する）。
+  function computeTripletGroups(notesToRender: Note[]): Note[][] {
+    const groups: Note[][] = [];
+    let current: Note[] = [];
+    let durationSum = 0;
+    const flush = () => {
+      if (current.length) groups.push(current);
+      current = [];
+      durationSum = 0;
+    };
+    for (const n of [...notesToRender].sort((a, b) => a.startGrid - b.startGrid)) {
+      if (!n.triplet) {
+        flush();
+        continue;
+      }
+      const prev = current[current.length - 1];
+      if (prev && snapGrid(prev.startGrid + noteSpan(prev)) !== n.startGrid) flush();
+      current.push(n);
+      durationSum += n.duration;
+      if (durationSum % 3 === 0) flush();
+    }
+    flush();
+    return groups;
+  }
+
+  // 3連符の括弧と数字を、符幹のある側（符幹が上向きなら音符の上、下向きなら下）に描く。
+  // 符幹の向きはrenderChordNoteheadsAndStem/renderBeamedGroupと同じく、グループ内で
+  // 中央線から最も遠い音で決める。
+  function renderTripletBracket(group: Note[], xForNote: (startGrid: number) => number, numberOnly: boolean) {
+    const scale = NOTEHEAD_FONT_SIZE / BRAVURA_UPM;
+    const ys = group.flatMap((n) => (n.isRest ? [MIDDLE_LINE_Y] : n.rowIdxList.map((r) => rows[r].y)));
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const stemDown = MIDDLE_LINE_Y - minY > maxY - MIDDLE_LINE_Y;
+    const hasStem = group.some((n) => !n.isRest && n.duration <= 8);
+    const reach = (hasStem ? STEM_LENGTH_UNITS * scale : 0) + 14;
+    const bracketY = Math.max(12, Math.min(STAFF_VB_H - 12, stemDown ? maxY + reach : minY - reach));
+    // 括弧の端は符頭の少し外側まで。フックは音符側に向ける。
+    const x1 = xForNote(group[0].startGrid) - 10;
+    const x2 = xForNote(group[group.length - 1].startGrid) + 10;
+    const midX = (x1 + x2) / 2;
+    const hook = stemDown ? -6 : 6;
+    const numberGap = 7;
+    const label = (
+      <text
+        x={midX}
+        y={bracketY}
+        fontSize={13}
+        fontFamily="'Times New Roman', serif"
+        fontStyle="italic"
+        fontWeight="bold"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="var(--text-primary)"
+      >
+        3
+      </text>
+    );
+    if (numberOnly) return label;
+    const stroke = { stroke: "var(--text-primary)", strokeWidth: 1 };
+    return (
+      <>
+        <polyline
+          points={`${x1},${bracketY + hook} ${x1},${bracketY} ${midX - numberGap},${bracketY}`}
+          fill="none"
+          {...stroke}
+        />
+        <polyline
+          points={`${midX + numberGap},${bracketY} ${x2},${bracketY} ${x2},${bracketY + hook}`}
+          fill="none"
+          {...stroke}
+        />
+        {label}
       </>
     );
   }
@@ -2044,6 +2169,13 @@ export default function StaffToFretboard({
             icon={<RestIcon />}
             active={restMode}
             onClick={() => setRestMode((prev) => !prev)}
+          />
+          <IconButton
+            id="triplet-toggle"
+            label="3連符で配置"
+            icon={<TripletIcon />}
+            active={tripletMode}
+            onClick={() => setTripletMode((prev) => !prev)}
           />
         </div>
 
@@ -2393,7 +2525,8 @@ export default function StaffToFretboard({
                   : selectedNote.duration === 2
                     ? "8分"
                     : "16分";
-          const btnStyle = { fontSize: "11px", padding: "0 4px", width: "34px", height: "20px", lineHeight: "1" };
+          const durationLabelWithTuplet = selectedNote.triplet ? `${durationLabel}3連` : durationLabel;
+          const btnStyle = { fontSize: "11px", padding: "0 4px", minWidth: "34px", height: "20px", lineHeight: "1" };
           // 和音の場合、臨時記号の操作対象はselectedRowIdx（選択中のピッチ）。
           // 未選択・和音外なら先頭の音を対象にする。
           const targetRowIdx =
@@ -2418,7 +2551,7 @@ export default function StaffToFretboard({
                 </button>
               )}
               <button style={btnStyle} onClick={() => cycleDuration(selectedNote.startGrid)}>
-                {durationLabel}
+                {durationLabelWithTuplet}
               </button>
               {!selectedNote.isRest && targetRowIdx !== null && (
                 <button style={btnStyle} onClick={() => pressFlat(selectedNote.startGrid, targetRowIdx)}>

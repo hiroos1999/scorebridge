@@ -40,12 +40,12 @@ TimeSignature・調号:
   （高さが異なる場合は通常のフレージングスラーとみなし、結合しない＝2音の
   ままにする。これは正しい挙動で、警告の対象にもしない）。
 
-3連符などのグリッド系で割り切れない音価について:
-  アプリのグリッド系は16分音符=1グリッドの2の冪乗細分のみ（全音符=16, 2分=8,
-  4分=4, 8分=2, 16分=1）で、真の3連符比率（1拍=3等分）を表現できない。
-  <time-modification>を持つ音符はグリッド数に丸められるため、実際の演奏より
-  「跳ねない」タイミングになる場合がある（既知の制約。警告は出さないが、
-  出力に3連符が含まれていた場合はここに注記する）。
+3連符について:
+  <time-modification>が3:2（3連符）の音符・休符は、Note型のtriplet=trueとして出力する。
+  durationは記譜上の音価（8分3連符なら8分=2）のまま持ち、実際に占める長さはその2/3
+  になる（lib/grid.tsのnoteSpan）。そのため3連符を含む小節ではstartGridが1/3グリッド
+  刻みの小数になる（浮動小数点誤差を避けるため、位置は常にsnap_gridで1/3刻みに丸める）。
+  3:2以外の比率の連符（5連符等）は表現できないため、グリッド数に丸めて警告する。
 
 .mxl（圧縮MusicXML）対応:
   拡張子または実体（zipのマジックバイト）で圧縮形式と判定した場合、
@@ -89,6 +89,18 @@ KIND_TO_APP_CHORD = {
     "major-sixth": "6",
     "minor-sixth": "m6",
 }
+
+
+def snap_grid(grid: float) -> float:
+    """グリッド位置を1/3刻みに丸める（lib/grid.tsのsnapGridと同じ）。
+    整数になる場合はintで返し、3連符を含まない曲のJSON出力を従来と同じ整数表記に保つ。"""
+    snapped = round(grid * 3) / 3
+    return int(snapped) if snapped == int(snapped) else snapped
+
+
+def note_span(duration: int, triplet: bool) -> float:
+    """音符・休符が実際に占めるグリッド数（lib/grid.tsのnoteSpanと同じ）。"""
+    return snap_grid(duration * 2 / 3) if triplet else duration
 
 
 def load_root_xml(path: str) -> ET.Element:
@@ -190,11 +202,16 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
         def xml_dur_to_grids(xml_duration: int) -> int:
             return max(round(xml_duration / divisions * grids_per_quarter), 1)
 
+        # 3連符を含む小節では位置が1/3グリッド刻みになるため、backup/forwardは
+        # 整数に丸めず1/3刻みで扱う（整数グリッドの曲では従来と同じ値になる）。
+        def xml_dur_to_snapped_grids(xml_duration: int) -> float:
+            return max(snap_grid(xml_duration / divisions * grids_per_quarter), 1 / 3)
+
         for child in measure_el:
             if child.tag == "backup":
-                grid -= xml_dur_to_grids(int(child.find("duration").text))
+                grid = snap_grid(grid - xml_dur_to_snapped_grids(int(child.find("duration").text)))
             elif child.tag == "forward":
-                grid += xml_dur_to_grids(int(child.find("duration").text))
+                grid = snap_grid(grid + xml_dur_to_snapped_grids(int(child.find("duration").text)))
             elif child.tag == "barline":
                 repeat_el = child.find("repeat")
                 if repeat_el is not None:
@@ -235,22 +252,38 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
                 if dur_el is None:
                     warnings.append(f"小節{m_idx + 1}: duration無しのnote要素をスキップ（装飾音符の可能性）")
                     continue
-                duration = xml_dur_to_grids(int(dur_el.text))
-
                 if child.find("chord") is not None:
                     warnings.append(
                         f"小節{m_idx + 1}: <chord/>（和音）は単旋律採譜スクリプトでは未対応のため無視しました"
                     )
                     continue
 
+                # <time-modification>（連符）: 3:2（3連符）だけはtripletで正確に表せるので、
+                # 実際の長さ(duration)を3/2倍した記譜上の音価をdurationとして持たせる。
+                time_mod_el = child.find("time-modification")
+                actual_notes = int(time_mod_el.findtext("actual-notes") or 0) if time_mod_el is not None else 0
+                normal_notes = int(time_mod_el.findtext("normal-notes") or 0) if time_mod_el is not None else 0
+                triplet = time_mod_el is not None and actual_notes == 3 and normal_notes == 2
+                if time_mod_el is not None and not triplet:
+                    warnings.append(
+                        f"小節{m_idx + 1}: {actual_notes}:{normal_notes}の連符を検出しました。3連符以外の連符には"
+                        "未対応のため、丸められたタイミングで取り込まれます（既知の制約）"
+                    )
+                xml_duration = int(dur_el.text)
+                if triplet:
+                    duration = max(round(xml_duration / divisions * grids_per_quarter * 1.5), 1)
+                else:
+                    duration = xml_dur_to_grids(xml_duration)
+                span = note_span(duration, triplet)
+
                 rest_el = child.find("rest")
                 if rest_el is not None:
                     raw_notes.append({
                         "startGrid": grid, "duration": duration, "isRest": True,
                         "rowIdx": None, "accidental": None,
-                        "tieStart": False, "tieStop": False,
+                        "tieStart": False, "tieStop": False, "triplet": triplet,
                     })
-                    grid += duration
+                    grid = snap_grid(grid + span)
                     continue
 
                 pitch_el = child.find("pitch")
@@ -268,7 +301,7 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
                         f"小節{m_idx + 1}: {step}{octave}はrows配列の範囲外(C6〜E3)のため変換できませんでした"
                         "（最も近い音に手動で置き換えてください）"
                     )
-                    grid += duration
+                    grid = snap_grid(grid + span)
                     continue
 
                 # <tie>だけでなく<notations><slur></notations>もタイ候補として拾う
@@ -277,12 +310,6 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
                 # 誤ってタイ扱いすることはない）。
                 notations_el = child.find("notations")
                 slur_els = notations_el.findall("slur") if notations_el is not None else []
-                tuplet_els = notations_el.findall("tuplet") if notations_el is not None else []
-                if tuplet_els:
-                    warnings.append(
-                        f"小節{m_idx + 1}: 連符（tuplet）を検出しました。グリッド系は2の冪乗細分のみのため、"
-                        "丸められたタイミングで取り込まれます（既知の制約）"
-                    )
                 tie_start = (
                     any(t.get("type") == "start" for t in child.findall("tie"))
                     or any(s.get("type") == "start" for s in slur_els)
@@ -295,9 +322,9 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
                 raw_notes.append({
                     "startGrid": grid, "duration": duration, "isRest": False,
                     "rowIdx": ROW_INDEX[key], "accidental": accidental,
-                    "tieStart": tie_start, "tieStop": tie_stop,
+                    "tieStart": tie_start, "tieStop": tie_stop, "triplet": triplet,
                 })
-                grid += duration
+                grid = snap_grid(grid + span)
 
         # ---- アウフタクト（弱起）対応 ----
         # 曲頭の小節だけを対象に、実際の中身が1小節分に満たない場合は
@@ -316,15 +343,15 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
             grids_per_measure_for_pickup = grids_per_quarter * ((time_beats or 4) * 4 // (time_beat_type or 4))
             content_grids = grid  # このmeasureで実際に進んだグリッド数
             if 0 < content_grids < grids_per_measure_for_pickup and (is_implicit or content_grids > 0):
-                padding = grids_per_measure_for_pickup - content_grids
+                padding = snap_grid(grids_per_measure_for_pickup - content_grids)
                 for n in raw_notes:
-                    n["startGrid"] += padding
+                    n["startGrid"] = snap_grid(n["startGrid"] + padding)
                 for h in harmonies:
-                    h["offsetGrid"] += padding
+                    h["offsetGrid"] = snap_grid(h["offsetGrid"] + padding)
                 raw_notes.insert(0, {
                     "startGrid": 0, "duration": padding, "isRest": True,
                     "rowIdx": None, "accidental": None,
-                    "tieStart": False, "tieStop": False,
+                    "tieStart": False, "tieStop": False, "triplet": False,
                 })
                 warnings.append(
                     f"小節1: アウフタクト（弱起）を検出しました。{content_grids}グリッド分の実音の前に"
@@ -371,6 +398,8 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
                 and not raw_notes[i + 1]["isRest"]
                 and raw_notes[i + 1]["rowIdx"] == n["rowIdx"]
                 and raw_notes[i + 1]["accidental"] == n["accidental"]
+                # 3連符と通常の音符のタイは、1つの音価（durationとtripletの組）では表せないため結合しない。
+                and raw_notes[i + 1]["triplet"] == n["triplet"]
             ):
                 nxt = raw_notes[i + 1]
                 merged.append({
@@ -379,6 +408,7 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
                     "isRest": False,
                     "rowIdxList": [n["rowIdx"]],
                     "accidentals": {str(n["rowIdx"]): n["accidental"]},
+                    **({"triplet": True} if n["triplet"] else {}),
                 })
                 i += 2
                 continue
@@ -395,18 +425,20 @@ def parse_score(xml_path: str, grids_per_quarter: int = 4):
                 # 直前でマージ済み、またはマージできなかった残骸。単独のtie stopは
                 # そのまま出力すればよい（上のマージ処理で拾えなかった＝小節をまたいだ側）。
                 pass
+            triplet_prop = {"triplet": True} if n["triplet"] else {}
             if n["isRest"]:
                 merged.append({
                     "startGrid": n["startGrid"], "duration": n["duration"], "isRest": True,
-                    "rowIdxList": [], "accidentals": {},
+                    "rowIdxList": [], "accidentals": {}, **triplet_prop,
                 })
             else:
                 merged.append({
                     "startGrid": n["startGrid"], "duration": n["duration"], "isRest": False,
                     "rowIdxList": [n["rowIdx"]], "accidentals": {str(n["rowIdx"]): n["accidental"]},
+                    **triplet_prop,
                 })
             i += 1
-        total_grid = sum(x["duration"] for x in merged)
+        total_grid = snap_grid(sum(note_span(x["duration"], x.get("triplet", False)) for x in merged))
         measures_out.append({
             "notes": merged,
             "harmonies": raw_harmonies[m_idx],
