@@ -1265,6 +1265,31 @@ export default function StaffToFretboard({
     });
   }
 
+  // 選択中の音符・休符の3連符/通常を切り替える。3連符にすると実際の長さは2/3に
+  // 縮むので常に収まるが、通常に戻す場合は直後の音符（無ければ小節末）までに
+  // 収まらなければ切り替えない（音価切り替えと同様、入らない場合は何もしない）。
+  // 切り替えた状態は3連符モード(tripletMode)にも引き継ぎ、続けて配置する
+  // 音符・休符も同じ種類になるようにする。
+  function toggleTriplet(startGrid: number) {
+    const sorted = [...notes].sort((a, b) => a.startGrid - b.startGrid);
+    const idx = sorted.findIndex((n) => n.startGrid === startGrid);
+    if (idx === -1) return;
+    const note = sorted[idx];
+    const nextNote = sorted[idx + 1];
+    const maxAllowed = snapGrid((nextNote ? nextNote.startGrid : gridsPerMeasure) - note.startGrid);
+    const triplet = !note.triplet;
+    if (noteSpan({ duration: note.duration, triplet }) > maxAllowed) {
+      setFullFeedback(true);
+      setTimeout(() => setFullFeedback(false), 250);
+      return;
+    }
+    updateMeasureNotes(currentMeasureIndex, (ns) =>
+      ns.map((n) => (n.startGrid === startGrid ? { ...n, triplet } : n))
+    );
+    setTripletMode(triplet);
+    setDefaultDuration(note.duration);
+  }
+
   // 全小節のnotes・harmoniesを両方まとめてリセットする（従来の「クリア」ボタンの
   // 挙動を、独立した2つのデータに対しても踏襲する）。ユーザーが＋/削除で組み立てた
   // 小節数そのものは維持し、中身だけを空にする（小節構成をクリアで失わせない）。
@@ -2525,7 +2550,6 @@ export default function StaffToFretboard({
                   : selectedNote.duration === 2
                     ? "8分"
                     : "16分";
-          const durationLabelWithTuplet = selectedNote.triplet ? `${durationLabel}3連` : durationLabel;
           const btnStyle = { fontSize: "11px", padding: "0 4px", minWidth: "34px", height: "20px", lineHeight: "1" };
           // 和音の場合、臨時記号の操作対象はselectedRowIdx（選択中のピッチ）。
           // 未選択・和音外なら先頭の音を対象にする。
@@ -2550,9 +2574,20 @@ export default function StaffToFretboard({
                   ▲
                 </button>
               )}
-              <button style={btnStyle} onClick={() => cycleDuration(selectedNote.startGrid)}>
-                {durationLabelWithTuplet}
-              </button>
+              <div style={{ display: "flex", gap: "1px" }}>
+                <button style={btnStyle} onClick={() => cycleDuration(selectedNote.startGrid)}>
+                  {durationLabel}
+                </button>
+                <button
+                  id="note-triplet-toggle"
+                  aria-pressed={!!selectedNote.triplet}
+                  className={selectedNote.triplet ? "icon-btn-active" : undefined}
+                  style={btnStyle}
+                  onClick={() => toggleTriplet(selectedNote.startGrid)}
+                >
+                  3連
+                </button>
+              </div>
               {!selectedNote.isRest && targetRowIdx !== null && (
                 <button style={btnStyle} onClick={() => pressFlat(selectedNote.startGrid, targetRowIdx)}>
                   ▼
