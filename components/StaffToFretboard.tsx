@@ -677,6 +677,18 @@ export default function StaffToFretboard({
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
   }, []);
+  // 五線譜の表示領域の幅。画面が広いときは、表示中の小節の右側に後続の小節も並べて表示する。
+  const staffWrapRef = useRef<HTMLDivElement>(null);
+  const [staffWrapWidth, setStaffWrapWidth] = useState(0);
+  useEffect(() => {
+    const el = staffWrapRef.current;
+    if (!el) return;
+    const update = () => setStaffWrapWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [isPlaying, setIsPlaying] = useState(false);
   // ローカルなstartGridは小節をまたいで一意ではないため、どの小節の音符かも保持する。
   const [playingNoteKey, setPlayingNoteKey] = useState<{ measureIndex: number; startGrid: number } | null>(null);
@@ -1057,7 +1069,22 @@ export default function StaffToFretboard({
   // 小節線(=xForGrid(gridsPerMeasure))の位置。この右側に次の小節の頭のプレビューを描画する。
   const barlineX = LEFT + NOTE_AREA_WIDTH;
   const previewXForGrid = (g: number) => barlineX + PREVIEW_GAP_PX + g * GRID_UNIT_WIDTH;
-  const STAFF_VB_W = barlineX + PREVIEW_GAP_PX + PREVIEW_WIDTH_PX + NOTE_AREA_MARGIN_RIGHT;
+  // 後続の小節を1小節まるごと並べられる幅があれば、入る分だけ（残りの小節数まで）表示する。
+  // 入らない狭い画面では、従来どおり次の小節の頭だけをプレビューする。
+  const MEASURE_UNIT_W = NOTE_AREA_WIDTH + PREVIEW_GAP_PX;
+  const staffScale = STAFF_RENDER_HEIGHT_PX / STAFF_VB_H;
+  const availableVbWidth = staffWrapWidth / staffScale;
+  const remainingMeasures = measures.length - currentMeasureIndex - 1;
+  // 右側の余白(roomAfter)に、1拍分のプレビュー以上の幅があるときは、後続の小節を余白いっぱいまで
+  // 並べる（最後の小節は余白の端で切れてよい）。足りない狭い画面では従来のプレビューにする。
+  const roomAfterBarline = availableVbWidth - barlineX - NOTE_AREA_MARGIN_RIGHT;
+  const multiMeasureMode = remainingMeasures >= 1 && roomAfterBarline >= PREVIEW_GAP_PX + PREVIEW_WIDTH_PX;
+  const extraMeasures = multiMeasureMode
+    ? Math.min(remainingMeasures, Math.ceil(roomAfterBarline / MEASURE_UNIT_W))
+    : 0;
+  const STAFF_VB_W = multiMeasureMode
+    ? barlineX + Math.min(extraMeasures * MEASURE_UNIT_W, roomAfterBarline) + NOTE_AREA_MARGIN_RIGHT
+    : barlineX + PREVIEW_GAP_PX + PREVIEW_WIDTH_PX + NOTE_AREA_MARGIN_RIGHT;
   // 高さを STAFF_RENDER_HEIGHT_PX に固定したまま、viewBoxの縦横比に応じて
   // 横幅だけを自然に伸ばす（縦のスケール＝ト音記号や五線の間隔は変えない）。
   const staffRenderedWidth = STAFF_RENDER_HEIGHT_PX * (STAFF_VB_W / STAFF_VB_H);
@@ -1096,7 +1123,17 @@ export default function StaffToFretboard({
     const y = (e.clientY - rect.top) * (STAFF_VB_H / rect.height);
     // 小節線より右側（次の小節のプレビュー領域）のクリックは無視する。
     // プレビューは表示のみで、クリック・編集の対象は表示中の小節に限る。
-    if (x > barlineX) return;
+    if (x > barlineX) {
+      // 右側に並んだ後続の小節をクリックしたら、その小節に移動する。
+      if (extraMeasures >= 1) {
+        const k = Math.min(extraMeasures, Math.floor((x - barlineX) / MEASURE_UNIT_W) + 1);
+        setCurrentMeasureIndex((i) => Math.min(measures.length - 1, i + k));
+        setSelectedNoteKey(null);
+        setSelectedRowIdx(null);
+        setChordTargetGrid(0);
+      }
+      return;
+    }
     // 3連符はstartGridが1/3グリッド刻みになるため、グリッドへの丸めはせずに
     // 小数のままのグリッド位置で当たり判定する。各音符の判定範囲は、符頭の位置
     // (startGrid)の少し手前から始まるよう、占める長さの半分(最大0.5グリッド)だけ
@@ -2341,7 +2378,7 @@ export default function StaffToFretboard({
         </div>
       )}
 
-      <div id="staff-wrap" style={{ overflowX: "auto" }}>
+      <div id="staff-wrap" ref={staffWrapRef} style={{ overflowX: "auto" }}>
       <svg
         id="staff"
         viewBox={`0 0 ${STAFF_VB_W} ${STAFF_VB_H}`}
@@ -2470,9 +2507,32 @@ export default function StaffToFretboard({
         {renderHarmoniesLayer(harmonies, displayXForNote)}
         {renderNotesWithBeams(notes, displayXForNote, true, currentMeasureIndex)}
 
-        {/* 次の小節の頭を、小節線の向こうに半透明・小さめでプレビュー表示する。
-            表示のみでクリック・編集の対象にはしない（pointerEvents="none"、
-            handleStaffClick側でも小節線より右のクリックは無視する）。 */}
+        {/* 後続の小節: 広い画面では複数小節を読み取り専用で並べ（クリックでその小節へ移動）、
+            狭い画面では次の小節の頭だけを小節線の向こうにプレビューする。
+            どちらも表示のみで編集の対象にはしない（pointerEvents="none"）。 */}
+        {extraMeasures >= 1 &&
+          Array.from({ length: extraMeasures }, (_, idx) => {
+            const k = idx + 1;
+            const m = measures[currentMeasureIndex + k];
+            if (!m) return null;
+            const xFor = (g: number) => barlineX + (k - 1) * MEASURE_UNIT_W + PREVIEW_GAP_PX + g * GRID_UNIT_WIDTH;
+            const endX = barlineX + k * MEASURE_UNIT_W;
+            return (
+              <g key={`next-${k}`} pointerEvents="none">
+                {renderHarmoniesLayer(m.harmonies, xFor)}
+                {renderNotesWithBeams(m.notes, xFor, false, currentMeasureIndex + k)}
+                <line
+                  x1={endX}
+                  x2={endX}
+                  y1={STAFF_TOP}
+                  y2={STAFF_TOP + 80}
+                  stroke="var(--text-primary)"
+                  strokeWidth={1.5}
+                />
+              </g>
+            );
+          })}
+
         {(() => {
           const nextMeasure = measures[currentMeasureIndex + 1];
           const previewNotes = nextMeasure
@@ -2481,7 +2541,7 @@ export default function StaffToFretboard({
           const previewHarmonies = nextMeasure
             ? nextMeasure.harmonies.filter((h) => h.offsetGrid * GRID_UNIT_WIDTH < PREVIEW_WIDTH_PX)
             : [];
-          if (previewNotes.length === 0 && previewHarmonies.length === 0) return null;
+          if (extraMeasures >= 1 || (previewNotes.length === 0 && previewHarmonies.length === 0)) return null;
           const anchorX = barlineX;
           const anchorY = MIDDLE_LINE_Y;
           return (
