@@ -1085,9 +1085,8 @@ export default function StaffToFretboard({
   let windowStart = Math.min(viewStart, maxViewStart);
   if (currentMeasureIndex < windowStart) windowStart = currentMeasureIndex;
   else if (currentMeasureIndex > windowStart + windowSize - 1) windowStart = Math.min(currentMeasureIndex, maxViewStart);
-  useEffect(() => {
-    if (windowStart !== viewStart) setViewStart(windowStart);
-  }, [windowStart, viewStart]);
+  // 表示範囲は、入力中の小節が範囲外に出たときだけページ送りする（描画中に保存し直すのはReact推奨の書き方）。
+  if (windowStart !== viewStart) setViewStart(windowStart);
   const activeSlot = currentMeasureIndex - windowStart;
   const originX = LEFT + activeSlot * MEASURE_UNIT_W;
   const xForGrid = (g: number) => originX + g * GRID_UNIT_WIDTH;
