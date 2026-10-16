@@ -680,6 +680,7 @@ export default function StaffToFretboard({
   // 五線譜の表示領域の幅。画面が広いときは、表示中の小節の右側に後続の小節も並べて表示する。
   const staffWrapRef = useRef<HTMLDivElement>(null);
   const [staffWrapWidth, setStaffWrapWidth] = useState(0);
+  const [viewStart, setViewStart] = useState(0);
   useEffect(() => {
     const el = staffWrapRef.current;
     if (!el) return;
@@ -1065,26 +1066,40 @@ export default function StaffToFretboard({
   const GRID_UNIT_WIDTH = NOTE_AREA_WIDTH / gridsPerMeasure;
   // Note.startGrid・Harmony.offsetGridは自分が属する小節内のローカルなグリッド番号
   // なので、表示中の小節を基準にしたx座標への変換にオフセットは不要。
-  const xForGrid = (g: number) => LEFT + g * GRID_UNIT_WIDTH;
-  // 小節線(=xForGrid(gridsPerMeasure))の位置。この右側に次の小節の頭のプレビューを描画する。
-  const barlineX = LEFT + NOTE_AREA_WIDTH;
-  const previewXForGrid = (g: number) => barlineX + PREVIEW_GAP_PX + g * GRID_UNIT_WIDTH;
-  // 後続の小節を1小節まるごと並べられる幅があれば、入る分だけ（残りの小節数まで）表示する。
-  // 入らない狭い画面では、従来どおり次の小節の頭だけをプレビューする。
+  // ---- 複数小節の表示ウィンドウ ----
+  // 画面が広いときは、1行に複数の小節を並べて表示し、並んだ小節はどれもその場で入力できる。
+  // 入力・再生の対象になっている小節(currentMeasureIndex)が「アクティブ」で、ウィンドウの何番目の
+  // スロットに居るか(activeSlot)に応じて、x座標の原点(originX)がずれる。
+  // スロットsの音符エリアは LEFT + s*MEASURE_UNIT_W から始まる（先頭スロットだけ調号・拍子記号の右）。
   const MEASURE_UNIT_W = NOTE_AREA_WIDTH + PREVIEW_GAP_PX;
   const staffScale = STAFF_RENDER_HEIGHT_PX / STAFF_VB_H;
   const availableVbWidth = staffWrapWidth / staffScale;
-  const remainingMeasures = measures.length - currentMeasureIndex - 1;
-  // 右側の余白(roomAfter)に、1拍分のプレビュー以上の幅があるときは、後続の小節を余白いっぱいまで
-  // 並べる（最後の小節は余白の端で切れてよい）。足りない狭い画面では従来のプレビューにする。
-  const roomAfterBarline = availableVbWidth - barlineX - NOTE_AREA_MARGIN_RIGHT;
-  const multiMeasureMode = remainingMeasures >= 1 && roomAfterBarline >= PREVIEW_GAP_PX + PREVIEW_WIDTH_PX;
-  const extraMeasures = multiMeasureMode
-    ? Math.min(remainingMeasures, Math.ceil(roomAfterBarline / MEASURE_UNIT_W))
-    : 0;
+  const firstBarlineX = LEFT + NOTE_AREA_WIDTH;
+  const roomAfterFirstBarline = availableVbWidth - firstBarlineX - NOTE_AREA_MARGIN_RIGHT;
+  // 余白に1拍分のプレビュー以上の幅があるときだけ複数小節表示にする（最後の小節は端で切れてよい）。
+  const multiMeasureMode = measures.length >= 2 && roomAfterFirstBarline >= PREVIEW_GAP_PX + PREVIEW_WIDTH_PX;
+  const windowSize = multiMeasureMode
+    ? Math.min(measures.length, 1 + Math.ceil(roomAfterFirstBarline / MEASURE_UNIT_W))
+    : 1;
+  const maxViewStart = Math.max(0, measures.length - windowSize);
+  let windowStart = Math.min(viewStart, maxViewStart);
+  if (currentMeasureIndex < windowStart) windowStart = currentMeasureIndex;
+  else if (currentMeasureIndex > windowStart + windowSize - 1) windowStart = Math.min(currentMeasureIndex, maxViewStart);
+  useEffect(() => {
+    if (windowStart !== viewStart) setViewStart(windowStart);
+  }, [windowStart, viewStart]);
+  const activeSlot = currentMeasureIndex - windowStart;
+  const originX = LEFT + activeSlot * MEASURE_UNIT_W;
+  const xForGrid = (g: number) => originX + g * GRID_UNIT_WIDTH;
+  // アクティブな小節の小節線の位置。windowSize===1のときは、この右側に次の小節の頭のプレビューを描画する。
+  const barlineX = originX + NOTE_AREA_WIDTH;
+  const previewXForGrid = (g: number) => barlineX + PREVIEW_GAP_PX + g * GRID_UNIT_WIDTH;
   const STAFF_VB_W = multiMeasureMode
-    ? barlineX + Math.min(extraMeasures * MEASURE_UNIT_W, roomAfterBarline) + NOTE_AREA_MARGIN_RIGHT
-    : barlineX + PREVIEW_GAP_PX + PREVIEW_WIDTH_PX + NOTE_AREA_MARGIN_RIGHT;
+    ? firstBarlineX + Math.min((windowSize - 1) * MEASURE_UNIT_W, roomAfterFirstBarline) + NOTE_AREA_MARGIN_RIGHT
+    : firstBarlineX + PREVIEW_GAP_PX + PREVIEW_WIDTH_PX + NOTE_AREA_MARGIN_RIGHT;
+  // クリックしたx座標がどのスロットか（先頭スロットの小節線より右は、以降のスロットを等間隔で割る）。
+  const slotForX = (x: number) =>
+    x <= firstBarlineX ? 0 : Math.min(windowSize - 1, Math.floor((x - firstBarlineX) / MEASURE_UNIT_W) + 1);
   // 高さを STAFF_RENDER_HEIGHT_PX に固定したまま、viewBoxの縦横比に応じて
   // 横幅だけを自然に伸ばす（縦のスケール＝ト音記号や五線の間隔は変えない）。
   const staffRenderedWidth = STAFF_RENDER_HEIGHT_PX * (STAFF_VB_W / STAFF_VB_H);
@@ -1121,28 +1136,26 @@ export default function StaffToFretboard({
     const rect = svg.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (STAFF_VB_W / rect.width);
     const y = (e.clientY - rect.top) * (STAFF_VB_H / rect.height);
-    // 小節線より右側（次の小節のプレビュー領域）のクリックは無視する。
-    // プレビューは表示のみで、クリック・編集の対象は表示中の小節に限る。
-    if (x > barlineX) {
-      // 右側に並んだ後続の小節をクリックしたら、その小節に移動する。
-      if (extraMeasures >= 1) {
-        const k = Math.min(extraMeasures, Math.floor((x - barlineX) / MEASURE_UNIT_W) + 1);
-        setCurrentMeasureIndex((i) => Math.min(measures.length - 1, i + k));
-        setSelectedNoteKey(null);
-        setSelectedRowIdx(null);
-        setChordTargetGrid(0);
-      }
-      return;
+    // 並んだ小節のどれをクリックしても、そのまま入力できる（クリックした小節がアクティブになる）。
+    // 小節が1つしか見えない狭い画面では、先頭小節の小節線より右（次の小節のプレビュー）は無視する。
+    if (windowSize === 1 && x > firstBarlineX) return;
+    const slot = slotForX(x);
+    const targetMeasureIndex = windowStart + slot;
+    if (targetMeasureIndex >= measures.length) return;
+    const targetNotes = measures[targetMeasureIndex].notes;
+    if (targetMeasureIndex !== currentMeasureIndex) {
+      setCurrentMeasureIndex(targetMeasureIndex);
+      setChordTargetGrid(0);
     }
     // 3連符はstartGridが1/3グリッド刻みになるため、グリッドへの丸めはせずに
     // 小数のままのグリッド位置で当たり判定する。各音符の判定範囲は、符頭の位置
     // (startGrid)の少し手前から始まるよう、占める長さの半分(最大0.5グリッド)だけ
     // 左にずらす（整数グリッドの音符では、従来のMath.roundによる判定と一致する）。
-    const rawGrid = Math.max(0, Math.min(gridsPerMeasure - 1, (x - LEFT) / GRID_UNIT_WIDTH));
+    const rawGrid = Math.max(0, Math.min(gridsPerMeasure - 1, (x - LEFT - slot * MEASURE_UNIT_W) / GRID_UNIT_WIDTH));
     let rowIdx = Math.round((y - rows[0].y) / 10);
     rowIdx = Math.max(0, Math.min(rows.length - 1, rowIdx));
 
-    const covering = notes.find((n) => {
+    const covering = targetNotes.find((n) => {
       const span = noteSpan(n);
       const lead = Math.min(0.5, span / 2);
       return rawGrid >= n.startGrid - lead && rawGrid < n.startGrid + span - lead;
@@ -1150,11 +1163,11 @@ export default function StaffToFretboard({
     if (covering) {
       if (restMode) {
         if (covering.isRest) {
-          updateMeasureNotes(currentMeasureIndex, (ns) => ns.filter((n) => n !== covering));
+          updateMeasureNotes(targetMeasureIndex, (ns) => ns.filter((n) => n !== covering));
           setSelectedNoteKey((prev) => (prev === covering.startGrid ? null : prev));
           setSelectedRowIdx(null);
         } else {
-          updateMeasureNotes(currentMeasureIndex, (ns) =>
+          updateMeasureNotes(targetMeasureIndex, (ns) =>
             ns.map((n) => (n === covering ? { ...n, isRest: true, rowIdxList: [], accidentals: {} } : n))
           );
           setSelectedNoteKey(covering.startGrid);
@@ -1162,7 +1175,7 @@ export default function StaffToFretboard({
         }
       } else {
         if (covering.isRest) {
-          updateMeasureNotes(currentMeasureIndex, (ns) =>
+          updateMeasureNotes(targetMeasureIndex, (ns) =>
             ns.map((n) =>
               n === covering
                 ? {
@@ -1182,11 +1195,11 @@ export default function StaffToFretboard({
           const newAccidentals = { ...covering.accidentals };
           delete newAccidentals[rowIdx];
           if (newList.length === 0) {
-            updateMeasureNotes(currentMeasureIndex, (ns) => ns.filter((n) => n !== covering));
+            updateMeasureNotes(targetMeasureIndex, (ns) => ns.filter((n) => n !== covering));
             setSelectedNoteKey((prev) => (prev === covering.startGrid ? null : prev));
             setSelectedRowIdx(null);
           } else {
-            updateMeasureNotes(currentMeasureIndex, (ns) =>
+            updateMeasureNotes(targetMeasureIndex, (ns) =>
               ns.map((n) => (n === covering ? { ...n, rowIdxList: newList, accidentals: newAccidentals } : n))
             );
             setSelectedNoteKey(covering.startGrid);
@@ -1196,7 +1209,7 @@ export default function StaffToFretboard({
           // 既存音符がある位置で違う段をクリック -> その音を和音に追加する。
           const newList = [...covering.rowIdxList, rowIdx].sort((a, b) => a - b);
           const newAccidentals = { ...covering.accidentals, [rowIdx]: defaultAccidentalForRow(rowIdx) };
-          updateMeasureNotes(currentMeasureIndex, (ns) =>
+          updateMeasureNotes(targetMeasureIndex, (ns) =>
             ns.map((n) => (n === covering ? { ...n, rowIdxList: newList, accidentals: newAccidentals } : n))
           );
           setSelectedNoteKey(covering.startGrid);
@@ -1209,7 +1222,7 @@ export default function StaffToFretboard({
     // 空きエリアをクリックした場合、クリックしたx座標(グリッド)は使わず、
     // 現在配置されている音符・休符のうち一番右端（末尾）の直後の
     // 空きグリッドに自動追加する。y座標（音高）だけがクリック内容を左右する。
-    const appendGrid = notes.length === 0 ? 0 : Math.max(...notes.map((n) => snapGrid(n.startGrid + noteSpan(n))));
+    const appendGrid = targetNotes.length === 0 ? 0 : Math.max(...targetNotes.map((n) => snapGrid(n.startGrid + noteSpan(n))));
     const remaining = snapGrid(gridsPerMeasure - appendGrid);
     // 3連符モードでは、記譜上の音価(defaultDuration)の3連符が残りに収まらなければ、
     // 収まる中で一番長い標準音価の3連符にする。通常の音符は従来通り残りグリッド数で
@@ -1233,7 +1246,7 @@ export default function StaffToFretboard({
           accidentals: { [rowIdx]: defaultAccidentalForRow(rowIdx) },
           ...tripletProp,
         };
-    updateMeasureNotes(currentMeasureIndex, (ns) => [...ns, newNote].sort((a, b) => a.startGrid - b.startGrid));
+    updateMeasureNotes(targetMeasureIndex, (ns) => [...ns, newNote].sort((a, b) => a.startGrid - b.startGrid));
     setSelectedNoteKey(appendGrid);
     setSelectedRowIdx(restMode ? null : rowIdx);
   }
@@ -1245,9 +1258,17 @@ export default function StaffToFretboard({
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (STAFF_VB_W / rect.width);
-    if (x > barlineX) return;
-    let grid = Math.round((x - LEFT) / GRID_UNIT_WIDTH);
+    if (windowSize === 1 && x > firstBarlineX) return;
+    const slot = slotForX(x);
+    const targetMeasureIndex = windowStart + slot;
+    if (targetMeasureIndex >= measures.length) return;
+    let grid = Math.round((x - LEFT - slot * MEASURE_UNIT_W) / GRID_UNIT_WIDTH);
     grid = Math.max(0, Math.min(gridsPerMeasure - 1, grid));
+    if (targetMeasureIndex !== currentMeasureIndex) {
+      setCurrentMeasureIndex(targetMeasureIndex);
+      setSelectedNoteKey(null);
+      setSelectedRowIdx(null);
+    }
     setChordTargetGrid(grid);
   }
 
@@ -2507,28 +2528,22 @@ export default function StaffToFretboard({
         {renderHarmoniesLayer(harmonies, displayXForNote)}
         {renderNotesWithBeams(notes, displayXForNote, true, currentMeasureIndex)}
 
-        {/* 後続の小節: 広い画面では複数小節を読み取り専用で並べ（クリックでその小節へ移動）、
-            狭い画面では次の小節の頭だけを小節線の向こうにプレビューする。
-            どちらも表示のみで編集の対象にはしない（pointerEvents="none"）。 */}
-        {extraMeasures >= 1 &&
-          Array.from({ length: extraMeasures }, (_, idx) => {
-            const k = idx + 1;
-            const m = measures[currentMeasureIndex + k];
+        {/* 並んで表示している他の小節。クリックするとその小節がアクティブになって入力できる。
+            アクティブでない小節は少し薄く描画して、入力先との違いが分かるようにする。 */}
+        {windowSize >= 2 &&
+          Array.from({ length: windowSize }, (_, slot) => {
+            if (slot === activeSlot) return null;
+            const m = measures[windowStart + slot];
             if (!m) return null;
-            const xFor = (g: number) => barlineX + (k - 1) * MEASURE_UNIT_W + PREVIEW_GAP_PX + g * GRID_UNIT_WIDTH;
-            const endX = barlineX + k * MEASURE_UNIT_W;
+            const xFor = (g: number) => LEFT + slot * MEASURE_UNIT_W + g * GRID_UNIT_WIDTH;
+            const endX = LEFT + slot * MEASURE_UNIT_W + NOTE_AREA_WIDTH;
             return (
-              <g key={`next-${k}`} pointerEvents="none">
-                {renderHarmoniesLayer(m.harmonies, xFor)}
-                {renderNotesWithBeams(m.notes, xFor, false, currentMeasureIndex + k)}
-                <line
-                  x1={endX}
-                  x2={endX}
-                  y1={STAFF_TOP}
-                  y2={STAFF_TOP + 80}
-                  stroke="var(--text-primary)"
-                  strokeWidth={1.5}
-                />
+              <g key={`slot-${slot}`} pointerEvents="none">
+                <g opacity={0.65}>
+                  {renderHarmoniesLayer(m.harmonies, xFor)}
+                  {renderNotesWithBeams(m.notes, xFor, false, windowStart + slot)}
+                </g>
+                <line x1={endX} x2={endX} y1={STAFF_TOP} y2={STAFF_TOP + 80} stroke="var(--text-primary)" strokeWidth={1.5} />
               </g>
             );
           })}
@@ -2541,7 +2556,7 @@ export default function StaffToFretboard({
           const previewHarmonies = nextMeasure
             ? nextMeasure.harmonies.filter((h) => h.offsetGrid * GRID_UNIT_WIDTH < PREVIEW_WIDTH_PX)
             : [];
-          if (extraMeasures >= 1 || (previewNotes.length === 0 && previewHarmonies.length === 0)) return null;
+          if (windowSize >= 2 || (previewNotes.length === 0 && previewHarmonies.length === 0)) return null;
           const anchorX = barlineX;
           const anchorY = MIDDLE_LINE_Y;
           return (
@@ -2559,7 +2574,7 @@ export default function StaffToFretboard({
         <rect
           x={LEFT - 40}
           y={2}
-          width={barlineX - (LEFT - 40)}
+          width={STAFF_VB_W - (LEFT - 40)}
           height={STAFF_VB_H - 4}
           fill="transparent"
           style={{ pointerEvents: "auto", touchAction: "manipulation" }}
@@ -2592,32 +2607,39 @@ export default function StaffToFretboard({
         style={{ width: `${staffRenderedWidth}px`, height: "24px", display: "block", cursor: "pointer" }}
         onClick={handleChordTimelineClick}
       >
-        <rect
-          x={LEFT}
-          y={5}
-          width={barlineX - LEFT}
-          height={12}
-          rx={3}
-          fill="var(--surface-0)"
-          stroke="var(--border)"
-        />
-        {/* 配置できる位置(16分音符のグリッド)の目盛り。拍の位置は五線譜の拍の補助線と同じxに
-            なるよう xForGrid を共有しており、どこにマーカーが止まるかが見えるようにする。 */}
-        {Array.from({ length: gridsPerMeasure + 1 }, (_, g) => {
-          const isBeat = g % gridsPerBeat === 0;
-          const isEighth = g % 2 === 0;
-          const x = xForGrid(g);
+        {Array.from({ length: windowSize }, (_, slot) => {
+          const slotOrigin = LEFT + slot * MEASURE_UNIT_W;
           return (
-            <line
-              key={g}
-              x1={x}
-              x2={x}
-              y1={isBeat ? 5 : isEighth ? 8 : 10}
-              y2={isBeat ? 17 : isEighth ? 14 : 12}
-              stroke={isBeat ? "var(--text-secondary)" : "var(--border-strong)"}
-              strokeWidth={isBeat ? 1.5 : 1}
-              pointerEvents="none"
-            />
+            <g key={`tl-${slot}`} opacity={slot === activeSlot ? 1 : 0.65}>
+              <rect
+                x={slotOrigin}
+                y={5}
+                width={NOTE_AREA_WIDTH}
+                height={12}
+                rx={3}
+                fill="var(--surface-0)"
+                stroke="var(--border)"
+              />
+              {/* 配置できる位置(16分音符のグリッド)の目盛り。拍の位置は五線譜の拍の補助線と同じxに
+                  なるよう同じ原点・同じ幅で描き、どこにマーカーが止まるかが見えるようにする。 */}
+              {Array.from({ length: gridsPerMeasure + 1 }, (_, g) => {
+                const isBeat = g % gridsPerBeat === 0;
+                const isEighth = g % 2 === 0;
+                const x = slotOrigin + g * GRID_UNIT_WIDTH;
+                return (
+                  <line
+                    key={g}
+                    x1={x}
+                    x2={x}
+                    y1={isBeat ? 5 : isEighth ? 8 : 10}
+                    y2={isBeat ? 17 : isEighth ? 14 : 12}
+                    stroke={isBeat ? "var(--text-secondary)" : "var(--border-strong)"}
+                    strokeWidth={isBeat ? 1.5 : 1}
+                    pointerEvents="none"
+                  />
+                );
+              })}
+            </g>
           );
         })}
         {/* 配置予定位置(chordTargetGrid)を示す三角マーカー。 */}
