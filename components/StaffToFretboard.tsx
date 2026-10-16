@@ -2052,9 +2052,18 @@ export default function StaffToFretboard({
           font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
           background: var(--surface-0);
           color: var(--text-primary);
-          max-width: 900px;
+          max-width: 1100px;
           margin: 0 auto;
           padding: 0.75rem;
+          padding-left: max(0.75rem, env(safe-area-inset-left));
+          padding-right: max(0.75rem, env(safe-area-inset-right));
+          padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+        }
+        /* iPhone/iPadなどタッチ操作: ボタンは44px以上、フォームは16px以上(iOSの自動ズーム防止) */
+        @media (pointer: coarse) {
+          select, button { height: 44px; font-size: 16px; }
+          .icon-btn { width: 44px; height: 44px; }
+          #controls { gap: 8px; }
         }
         select { min-width:0; max-width:100%; }
         select, button {
