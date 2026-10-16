@@ -1077,7 +1077,7 @@ export default function StaffToFretboard({
   const firstBarlineX = LEFT + NOTE_AREA_WIDTH;
   const roomAfterFirstBarline = availableVbWidth - firstBarlineX - NOTE_AREA_MARGIN_RIGHT;
   // 余白に1拍分のプレビュー以上の幅があるときだけ複数小節表示にする（最後の小節は端で切れてよい）。
-  const multiMeasureMode = measures.length >= 2 && roomAfterFirstBarline >= PREVIEW_GAP_PX + PREVIEW_WIDTH_PX;
+  const multiMeasureMode = roomAfterFirstBarline >= PREVIEW_GAP_PX + PREVIEW_WIDTH_PX;
   const windowSize = multiMeasureMode
     ? Math.min(measures.length, 1 + Math.ceil(roomAfterFirstBarline / MEASURE_UNIT_W))
     : 1;
@@ -1093,8 +1093,18 @@ export default function StaffToFretboard({
   // アクティブな小節の小節線の位置。windowSize===1のときは、この右側に次の小節の頭のプレビューを描画する。
   const barlineX = originX + NOTE_AREA_WIDTH;
   const previewXForGrid = (g: number) => barlineX + PREVIEW_GAP_PX + g * GRID_UNIT_WIDTH;
+  // 最後の小節まで表示できていて、右にまだ余白があるときは、「小節を追加」の枠を置く。
+  // 枠をクリックすると末尾に小節が増え、そのまま入力できる。
+  const lastSlotEndX = firstBarlineX + (windowSize - 1) * MEASURE_UNIT_W;
+  const ghostRoom = roomAfterFirstBarline - (windowSize - 1) * MEASURE_UNIT_W;
+  const ghostShown = multiMeasureMode && windowStart + windowSize >= measures.length && ghostRoom >= 160;
+  const ghostWidth = ghostShown ? Math.min(MEASURE_UNIT_W, ghostRoom) : 0;
   const STAFF_VB_W = multiMeasureMode
-    ? firstBarlineX + Math.min((windowSize - 1) * MEASURE_UNIT_W, roomAfterFirstBarline) + NOTE_AREA_MARGIN_RIGHT
+    ? firstBarlineX +
+      (ghostShown
+        ? (windowSize - 1) * MEASURE_UNIT_W + ghostWidth
+        : Math.min((windowSize - 1) * MEASURE_UNIT_W, roomAfterFirstBarline)) +
+      NOTE_AREA_MARGIN_RIGHT
     : firstBarlineX + PREVIEW_GAP_PX + PREVIEW_WIDTH_PX + NOTE_AREA_MARGIN_RIGHT;
   // クリックしたx座標がどのスロットか（先頭スロットの小節線より右は、以降のスロットを等間隔で割る）。
   const slotForX = (x: number) =>
@@ -1137,6 +1147,10 @@ export default function StaffToFretboard({
     const y = (e.clientY - rect.top) * (STAFF_VB_H / rect.height);
     // 並んだ小節のどれをクリックしても、そのまま入力できる（クリックした小節がアクティブになる）。
     // 小節が1つしか見えない狭い画面では、先頭小節の小節線より右（次の小節のプレビュー）は無視する。
+    if (ghostShown && x > lastSlotEndX) {
+      handleAddMeasure();
+      return;
+    }
     if (windowSize === 1 && x > firstBarlineX) return;
     const slot = slotForX(x);
     const targetMeasureIndex = windowStart + slot;
@@ -1257,6 +1271,7 @@ export default function StaffToFretboard({
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (STAFF_VB_W / rect.width);
+    if (ghostShown && x > lastSlotEndX) return;
     if (windowSize === 1 && x > firstBarlineX) return;
     const slot = slotForX(x);
     const targetMeasureIndex = windowStart + slot;
@@ -2546,6 +2561,31 @@ export default function StaffToFretboard({
               </g>
             );
           })}
+
+        {ghostShown && (
+          <g pointerEvents="none">
+            <rect
+              x={lastSlotEndX + PREVIEW_GAP_PX}
+              y={STAFF_TOP - 10}
+              width={ghostWidth - PREVIEW_GAP_PX - 8}
+              height={100}
+              rx={10}
+              fill="none"
+              stroke="var(--border-strong)"
+              strokeWidth={1.5}
+              strokeDasharray="6 6"
+            />
+            <text
+              x={lastSlotEndX + PREVIEW_GAP_PX + (ghostWidth - PREVIEW_GAP_PX - 8) / 2}
+              y={STAFF_TOP + 46}
+              textAnchor="middle"
+              fontSize={22}
+              fill="var(--text-secondary)"
+            >
+              ＋ 小節を追加
+            </text>
+          </g>
+        )}
 
         {(() => {
           const nextMeasure = measures[currentMeasureIndex + 1];
