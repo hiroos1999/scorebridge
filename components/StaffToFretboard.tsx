@@ -2601,6 +2601,25 @@ export default function StaffToFretboard({
           fill="var(--surface-0)"
           stroke="var(--border)"
         />
+        {/* 配置できる位置(16分音符のグリッド)の目盛り。拍の位置は五線譜の拍の補助線と同じxに
+            なるよう xForGrid を共有しており、どこにマーカーが止まるかが見えるようにする。 */}
+        {Array.from({ length: gridsPerMeasure + 1 }, (_, g) => {
+          const isBeat = g % gridsPerBeat === 0;
+          const isEighth = g % 2 === 0;
+          const x = xForGrid(g);
+          return (
+            <line
+              key={g}
+              x1={x}
+              x2={x}
+              y1={isBeat ? 5 : isEighth ? 8 : 10}
+              y2={isBeat ? 17 : isEighth ? 14 : 12}
+              stroke={isBeat ? "var(--text-secondary)" : "var(--border-strong)"}
+              strokeWidth={isBeat ? 1.5 : 1}
+              pointerEvents="none"
+            />
+          );
+        })}
         {/* 配置予定位置(chordTargetGrid)を示す三角マーカー。 */}
         <polygon
           points={`${displayXForNote(chordTargetGrid) - 6},1 ${displayXForNote(chordTargetGrid) + 6},1 ${displayXForNote(chordTargetGrid)},13`}
