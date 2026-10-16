@@ -318,7 +318,7 @@ const CHORD_TYPE_LABELS: Record<string, string> = {
 };
 // 転回形のラベル（インデックス=ベースになる構成音の順位。0=ルート）。
 // 3和音なら第2転回形まで、4和音（7thコード）なら第3転回形まで存在する。
-const INVERSION_LABELS = ["基本形", "第1転回形", "第2転回形", "第3転回形"];
+const INVERSION_LABELS = ["Root position", "1st inversion", "2nd inversion", "3rd inversion"];
 
 // 五線上の段(rows)は自然音名のみを持つため、半音（黒鍵相当）のピッチクラスを
 // どの自然音の段に臨時記号を付けて表すかのテーブル（#表記/♭表記どちらで書くか）。
@@ -2170,6 +2170,7 @@ export default function StaffToFretboard({
         @media (pointer: coarse) {
           select, button { height: 44px; font-size: 16px; }
           .icon-btn { width: 44px; height: 44px; }
+          .icon-btn-text { width: auto; }
           #controls { gap: 8px; }
         }
         select { min-width:0; max-width:100%; }
@@ -2184,9 +2185,19 @@ export default function StaffToFretboard({
         }
         button:hover { background: var(--surface-2); cursor: pointer; }
         button:disabled { opacity: 0.4; cursor: default; }
-        #controls { display:flex; align-items:center; gap:6px; margin: 0 0 0.5rem; flex-wrap: wrap; }
-        .toolbar-group { display:flex; flex-wrap:wrap; align-items:center; gap:6px; max-width:100%; padding-right:8px; margin-right:2px; border-right: 1px solid var(--border); }
-        .toolbar-group:last-child { border-right: none; }
+        #controls { display:flex; align-items:stretch; gap:8px; margin: 0 0 0.75rem; flex-wrap: wrap; }
+        .toolbar-group {
+          display:flex; flex-wrap:wrap; align-items:center; gap:6px; max-width:100%;
+          padding:8px 10px 10px; background: var(--surface-1);
+          border:1px solid var(--border); border-radius:12px;
+        }
+        .toolbar-group[data-cap]::before {
+          content: attr(data-cap); flex-basis:100%; font-size:11px; line-height:1;
+          color: var(--text-secondary); margin: 0 0 2px 2px;
+        }
+        .toolbar-group select, .toolbar-group button { background: var(--surface-0); border-color: var(--border); }
+        .toolbar-group select:hover, .toolbar-group button:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-2); }
+        .toolbar-group:last-child { margin-left:auto; justify-content:flex-end; background:transparent; border-color:transparent; padding-right:0; }
         #legend { font-size: 12px; color: var(--text-secondary); margin-top: 0.5rem; }
         #fretboard-wrap { overflow-x: auto; }
 
@@ -2208,6 +2219,12 @@ export default function StaffToFretboard({
           color: var(--on-accent);
         }
         .icon-btn-active:hover { background: var(--accent); color: var(--on-accent); }
+        .icon-btn-text { width:auto; padding:0 14px; gap:7px; font-size:13px; font-weight:600; color: var(--text-primary); border-radius:999px; }
+        .toolbar-group .icon-btn-primary, .toolbar-group .icon-btn-primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 3px rgba(217,182,90,0.16); }
+        .toolbar-group .icon-btn-primary:disabled { opacity:0.55; box-shadow:none; }
+        .icon-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+        .toolbar-group .icon-btn-outline { color: var(--accent); border-color: rgba(217,182,90,0.55) !important; }
+        .icon-btn-outline:hover:not(:disabled) { background: rgba(217,182,90,0.12) !important; border-color: var(--accent) !important; }
         .icon-btn-tip {
           position: absolute;
           bottom: calc(100% + 6px);
@@ -2235,22 +2252,22 @@ export default function StaffToFretboard({
           </g>
         </svg>
         <span className="sb-name">ScoreBridge</span>
-        <span className="sb-sub">楽譜から指板へ</span>
+        <span className="sb-sub">From staff to fretboard</span>
       </header>
 
       <div id="controls">
-        <div className="toolbar-group">
+        <div className="toolbar-group" data-cap="Song">
           <select
             id="template-select"
             defaultValue=""
-            aria-label="テンプレート"
+            aria-label="Song template"
             onChange={(e) => {
               if (!e.target.value) return;
               handleLoadTemplate(e.target.value);
               e.target.value = ""; // 読み込み後は「未選択」に戻す(measuresは通常のstateとして編集可能)
             }}
           >
-            <option value="">曲テンプレート…</option>
+            <option value="">Song templates…</option>
             {TEMPLATES.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.label}
@@ -2260,14 +2277,14 @@ export default function StaffToFretboard({
 
           <select
             id="my-imports-select"
-            aria-label="マイインポート"
+            aria-label="My imports"
             value={selectedImportId}
             onChange={(e) => {
               setSelectedImportId(e.target.value);
               if (e.target.value) handleLoadImportedSong(e.target.value);
             }}
           >
-            <option value="">{importedSongs.length === 0 ? "マイインポート（まだありません）" : "マイインポート…"}</option>
+            <option value="">{importedSongs.length === 0 ? "My imports (none yet)" : "My imports…"}</option>
             {importedSongs.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -2277,7 +2294,7 @@ export default function StaffToFretboard({
           {selectedImportId && (
             <IconButton
               id="my-imports-delete-btn"
-              label="選択中のマイインポートを削除"
+              label="Delete selected import"
               icon={<Trash2 size={16} />}
               onClick={() => void handleDeleteImportedSong(selectedImportId)}
             />
@@ -2292,15 +2309,15 @@ export default function StaffToFretboard({
           />
           <IconButton
             id="import-musicxml-btn"
-            label={isImporting ? "インポート中…" : "MusicXMLをインポート"}
+            label={isImporting ? "Importing…" : "Import MusicXML"}
             icon={<Upload size={16} />}
             disabled={isImporting}
             onClick={() => fileInputRef.current?.click()}
           />
         </div>
 
-        <div className="toolbar-group">
-          <select aria-label="キー（移動ドのDo）" value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
+        <div className="toolbar-group" data-cap="Key & meter">
+          <select aria-label="Key (movable Do)" value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
             {names.map((n, i) => (
               <option key={i} value={i}>
                 {n}
@@ -2309,12 +2326,12 @@ export default function StaffToFretboard({
           </select>
           <IconButton
             id="accidental-toggle"
-            label={useFlats ? "♯表記に切り替え" : "♭表記に切り替え"}
+            label={useFlats ? "Use sharps" : "Use flats"}
             icon={useFlats ? <SharpIcon /> : <FlatIcon />}
             onClick={() => setUseFlats((prev) => !prev)}
           />
           <select
-            aria-label="拍子"
+            aria-label="Time signature"
             value={`${timeSig.numerator}/${timeSig.denominator}`}
             onChange={(e) => {
               const [num, den] = e.target.value.split("/").map(Number);
@@ -2329,24 +2346,24 @@ export default function StaffToFretboard({
           </select>
           <IconButton
             id="rest-toggle"
-            label="休符を配置"
+            label="Rest mode"
             icon={<RestIcon />}
             active={restMode}
             onClick={() => setRestMode((prev) => !prev)}
           />
           <IconButton
             id="triplet-toggle"
-            label="3連符で配置"
+            label="Triplet mode"
             icon={<TripletIcon />}
             active={tripletMode}
             onClick={() => setTripletMode((prev) => !prev)}
           />
         </div>
 
-        <div className="toolbar-group">
+        <div className="toolbar-group" data-cap="Measure">
           <IconButton
             id="measure-prev-btn"
-            label="前の小節"
+            label="Previous measure"
             icon={<ChevronLeft size={18} />}
             disabled={currentMeasureIndex === 0}
             onClick={() => {
@@ -2360,11 +2377,11 @@ export default function StaffToFretboard({
             }}
           />
           <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
-            {currentMeasureIndex + 1}/{measures.length}小節目
+            Measure {currentMeasureIndex + 1} / {measures.length}
           </span>
           <IconButton
             id="measure-next-btn"
-            label="次の小節"
+            label="Next measure"
             icon={<ChevronRight size={18} />}
             disabled={currentMeasureIndex === measures.length - 1}
             onClick={() => {
@@ -2374,20 +2391,20 @@ export default function StaffToFretboard({
               setChordTargetGrid(0);
             }}
           />
-          <IconButton id="measure-add-btn" label="末尾に小節を追加" icon={<Plus size={16} />} onClick={handleAddMeasure} />
+          <IconButton id="measure-add-btn" label="Add measure at end" icon={<Plus size={16} />} onClick={handleAddMeasure} />
           <IconButton
             id="measure-delete-btn"
-            label="表示中の小節を削除"
+            label="Delete this measure"
             icon={<Trash2 size={16} />}
             disabled={measures.length <= 1}
             onClick={handleDeleteMeasure}
           />
         </div>
 
-        <div className="toolbar-group">
+        <div className="toolbar-group" data-cap="Chord">
           <select
             id="chord-root-select"
-            aria-label="コードのルート音"
+            aria-label="Chord root"
             value={chordRoot}
             onChange={(e) => setChordRoot(parseInt(e.target.value, 10))}
           >
@@ -2397,7 +2414,7 @@ export default function StaffToFretboard({
               </option>
             ))}
           </select>
-          <select id="chord-type-select" aria-label="コードの種類" value={chordType} onChange={(e) => setChordType(e.target.value)}>
+          <select id="chord-type-select" aria-label="Chord quality" value={chordType} onChange={(e) => setChordType(e.target.value)}>
             {Object.keys(CHORD_TYPES).map((type) => (
               <option key={type} value={type}>
                 {CHORD_TYPE_LABELS[type]}
@@ -2406,7 +2423,7 @@ export default function StaffToFretboard({
           </select>
           <select
             id="chord-inversion-select"
-            aria-label="コードの転回形"
+            aria-label="Chord inversion"
             value={chordInversion}
             onChange={(e) => setChordInversion(parseInt(e.target.value, 10))}
           >
@@ -2416,19 +2433,21 @@ export default function StaffToFretboard({
               </option>
             ))}
           </select>
-          <IconButton id="chord-place-btn" label="和音を配置" icon={<ChordIcon />} onClick={handlePlaceChord} />
+          <IconButton id="chord-place-btn" label="Place chord" text="Place chord" variant="outline" icon={<ChordIcon />} onClick={handlePlaceChord} />
         </div>
 
         <div className="toolbar-group" style={{ marginLeft: "auto", borderRight: "none", paddingRight: 0 }}>
           <IconButton
             id="play-btn"
-            label={isPlaying ? "停止" : samplesReady ? "再生" : "音源読み込み中…"}
+            label={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading sounds…"}
+            text={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading…"}
+            variant="primary"
             icon={isPlaying ? <Square size={16} /> : <Play size={16} />}
             active={isPlaying}
             disabled={!samplesReady && !isPlaying}
             onClick={handlePlayClick}
           />
-          <IconButton id="clear-btn" label="クリア" icon={<Eraser size={16} />} onClick={handleClear} />
+          <IconButton id="clear-btn" label="Clear all" icon={<Eraser size={16} />} onClick={handleClear} />
         </div>
       </div>
 
@@ -2447,8 +2466,8 @@ export default function StaffToFretboard({
         >
           <details>
             <summary style={{ cursor: "pointer" }}>
-              「{lastImportWarnings.fileName}」のインポート結果:{" "}
-              {lastImportWarnings.warnings.length === 0 ? "警告なし" : `${lastImportWarnings.warnings.length}件の警告（クリックで表示）`}
+              Import result for “{lastImportWarnings.fileName}”:{" "}
+              {lastImportWarnings.warnings.length === 0 ? "no warnings" : `${lastImportWarnings.warnings.length} warning(s) (click to show)`}
             </summary>
             {lastImportWarnings.warnings.length > 0 && (
               <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
@@ -2631,7 +2650,7 @@ export default function StaffToFretboard({
               fontSize={22}
               fill="var(--text-secondary)"
             >
-              ＋ 小節を追加
+              ＋ Add measure
             </text>
           </g>
         )}
@@ -2686,7 +2705,7 @@ export default function StaffToFretboard({
           座標系(LEFT・GRID_UNIT_WIDTH・STAFF_VB_W)を共有しているため、
           x位置は五線譜本体とぴったり揃う。 */}
       <div style={{ fontSize: "11px", color: "var(--text-secondary)", margin: "4px 0 2px" }}>
-        コードを配置する位置をクリック
+        Click to set where the chord goes
       </div>
       <svg
         id="chord-timeline"
@@ -2750,14 +2769,14 @@ export default function StaffToFretboard({
           const leftPercent = (displayXForNote(selectedNote.startGrid) / STAFF_VB_W) * 100;
           const durationLabel =
             selectedNote.duration === 16
-              ? "全"
+              ? "whole"
               : selectedNote.duration === 8
-                ? "2分"
+                ? "half"
                 : selectedNote.duration === 4
-                  ? "4分"
+                  ? "quarter"
                   : selectedNote.duration === 2
-                    ? "8分"
-                    : "16分";
+                    ? "8th"
+                    : "16th";
           const btnStyle = { fontSize: "11px", padding: "0 4px", minWidth: "34px", height: "20px", lineHeight: "1" };
           // 和音の場合、臨時記号の操作対象はselectedRowIdx（選択中のピッチ）。
           // 未選択・和音外なら先頭の音を対象にする。
@@ -2793,7 +2812,7 @@ export default function StaffToFretboard({
                   style={btnStyle}
                   onClick={() => toggleTriplet(selectedNote.startGrid)}
                 >
-                  3連
+                  3
                 </button>
               </div>
               {!selectedNote.isRest && targetRowIdx !== null && (
@@ -2886,7 +2905,7 @@ export default function StaffToFretboard({
                   fontSize={12}
                   fill="var(--text-secondary)"
                 >
-                  {st.num + "弦 " + st.label}
+                  {"String " + st.num + " · " + st.label}
                 </text>
               </g>
             );
@@ -2955,16 +2974,16 @@ export default function StaffToFretboard({
 
       <div
         id="degree-legend"
-        aria-label="音の色の見方"
+        aria-label="Colour key"
         style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}
       >
         {[
-          { label: "Do 主音", role: "danger" },
-          { label: "Mi 3度", role: "warning" },
-          { label: "Fa 4度", role: "accent" },
-          { label: "Sol・Ti 5度・7度", role: "success" },
-          { label: "Re・La 2度・6度", role: "pro" },
-          { label: "半音(臨時記号)", role: "gray" },
+          { label: "Do · root", role: "danger" },
+          { label: "Mi · 3rd", role: "warning" },
+          { label: "Fa · 4th", role: "accent" },
+          { label: "Sol, Ti · 5th, 7th", role: "success" },
+          { label: "Re, La · 2nd, 6th", role: "pro" },
+          { label: "Chromatic", role: "gray" },
         ].map((it) => (
           <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
             <span
@@ -2977,12 +2996,12 @@ export default function StaffToFretboard({
       </div>
       {narrowFretboard && (
         <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
-          ※ 指板は0〜7フレットを表示しています。横向きにすると12フレットまで見えます。
+          Showing frets 0–7. Rotate your device to see up to fret 12.
         </div>
       )}
 
       <div id="legend">
-        五線譜をクリックして音を置く（同じ場所をもう一度で消去）。音符が置かれると下に♮/#/♭・音価の切り替えボタンが出ます。
+        Click the staff to place a note; click the same spot again to remove it. A selected note shows accidental and duration controls below.
       </div>
       </section>
     </>

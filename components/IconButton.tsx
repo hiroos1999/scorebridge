@@ -15,6 +15,8 @@ export default function IconButton({
   active = false,
   disabled = false,
   id,
+  text,
+  variant,
 }: {
   icon: ReactNode;
   label: string;
@@ -22,6 +24,8 @@ export default function IconButton({
   active?: boolean;
   disabled?: boolean;
   id?: string;
+  text?: string;
+  variant?: "primary" | "outline";
 }) {
   const [showTip, setShowTip] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -61,7 +65,7 @@ export default function IconButton({
         type="button"
         aria-label={label}
         disabled={disabled}
-        className={`icon-btn${active ? " icon-btn-active" : ""}`}
+        className={`icon-btn${active ? " icon-btn-active" : ""}${variant ? ` icon-btn-${variant}` : ""}${text ? " icon-btn-text" : ""}`}
         onClick={(e) => {
           if (longPressFired.current) {
             // long press直後に発火する合成クリックは無視する。
@@ -82,8 +86,9 @@ export default function IconButton({
         }}
       >
         {icon}
+        {text && <span>{text}</span>}
       </button>
-      {showTip && <span className="icon-btn-tip">{label}</span>}
+      {showTip && !text && <span className="icon-btn-tip">{label}</span>}
     </span>
   );
 }
