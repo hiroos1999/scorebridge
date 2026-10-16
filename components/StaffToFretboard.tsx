@@ -2105,21 +2105,56 @@ export default function StaffToFretboard({
             url("/fonts/bravura.otf") format("opentype");
           font-display: block;
         }
+        /* 配色: 暗い部屋(ink)に、譜面(paper)と指板(ebony)の2つの素材を置く。
+           操作部は暗い面、五線譜は紙の面、指板は黒檀の面で、それぞれ変数を切り替える。 */
         :root {
+          color-scheme: dark;
+          --border: rgba(237, 232, 220, 0.12);
+          --border-strong: rgba(237, 232, 220, 0.26);
+          --text-primary: #ede8dc;
+          --text-secondary: #a39b8c;
+          --surface-0: #100e0d;
+          --surface-1: #1e1b18;
+          --surface-2: #2b2723;
+          --danger: #f0563a; --on-danger:#fff4ee;
+          --warning: #eaa23a; --on-warning:#1a1208;
+          --success: #3fbf8c; --on-success:#06160f;
+          --pro: #8f87f2; --on-pro:#0f0d24;
+          --gray: #8f8878; --on-gray:#100e0d;
+          --accent: #d9b65a; --on-accent:#1a1511;
+        }
+        .sb-paper {
           --border: rgba(42, 39, 33, 0.12);
           --border-strong: rgba(42, 39, 33, 0.28);
           --text-primary: #2a2721;
           --text-secondary: #6c6455;
-          --surface-0: #f5f0e0;
-          --surface-1: #ece2c9;
-          --surface-2: #e0d3ae;
+          --surface-0: #f3efe3;
+          --surface-1: #e9e2d0;
+          --surface-2: #ddd4bc;
           --danger: #d6412a; --on-danger:#fff2ec;
           --warning: #b5730c; --on-warning:#fff8ea;
           --success: #157a55; --on-success:#e9fbf3;
           --pro: #5b52c9; --on-pro:#f1f0ff;
           --gray: #6c6455; --on-gray:#f5f0e0;
-          --accent: #C9A84C; --on-accent:#2a2721;
+          --accent: #b8942f; --on-accent:#2a2721;
+          color-scheme: light;
+          color: var(--text-primary);
+          background: #f3efe3;
+          border-radius: 14px;
+          padding: 10px 14px 8px;
+          margin: 0 0 14px;
+          box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 22px 44px -24px rgba(0, 0, 0, 0.75);
         }
+        .sb-board {
+          border-radius: 14px;
+          padding: 14px 14px 10px;
+          background: linear-gradient(180deg, #2a1e16 0%, #1a120d 100%);
+          box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 22px 44px -24px rgba(0, 0, 0, 0.8);
+        }
+        .sb-header { display: flex; align-items: center; gap: 10px; margin: 2px 0 14px; }
+        .sb-header .sb-name { font-size: 18px; font-weight: 700; letter-spacing: 0.02em; color: var(--text-primary); }
+        .sb-header .sb-sub { font-size: 12px; color: var(--text-secondary); margin-left: 2px; }
+        select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         body {
           font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
           background: var(--surface-0);
@@ -2189,6 +2224,19 @@ export default function StaffToFretboard({
           z-index: 10;
         }
       `}</style>
+
+      <header className="sb-header">
+        <svg width="34" height="26" viewBox="0 0 34 26" aria-hidden="true">
+          <path d="M2 22 C 8 2, 26 2, 32 22" fill="none" stroke="#d9b65a" strokeWidth="2.4" strokeLinecap="round" />
+          <g stroke="#a39b8c" strokeWidth="1.2">
+            <line x1="2" y1="22" x2="2" y2="10" /><line x1="2" y1="22" x2="2" y2="22" />
+            <line x1="32" y1="22" x2="32" y2="10" />
+            <line x1="12" y1="22" x2="12" y2="12" /><line x1="22" y1="22" x2="22" y2="12" />
+          </g>
+        </svg>
+        <span className="sb-name">ScoreBridge</span>
+        <span className="sb-sub">楽譜から指板へ</span>
+      </header>
 
       <div id="controls">
         <div className="toolbar-group">
@@ -2413,6 +2461,7 @@ export default function StaffToFretboard({
         </div>
       )}
 
+      <section className="sb-paper">
       <div id="staff-wrap" ref={staffWrapRef} style={{ overflowX: "auto" }}>
       <svg
         id="staff"
@@ -2758,12 +2807,38 @@ export default function StaffToFretboard({
       </div>
       </div>
 
+      </section>
+
+      <section className="sb-board">
       <div id="fretboard-wrap">
         <svg
           id="fretboard"
           viewBox={narrowFretboard ? `0 -14 ${fbLeft + 7 * fretW + 8} 234` : "0 -14 940 234"}
           style={{ width: "100%", height: "auto", display: "block", minWidth: narrowFretboard ? undefined : "660px" }}
         >
+          <defs>
+            <linearGradient id="ebony" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#34251b" />
+              <stop offset="0.5" stopColor="#241912" />
+              <stop offset="1" stopColor="#1b120d" />
+            </linearGradient>
+          </defs>
+          <rect
+            x={fbLeft}
+            y={fbTop - 16}
+            width={FRETS * fretW}
+            height={5 * stringGap + 32}
+            rx={4}
+            fill="url(#ebony)"
+          />
+          {/* ポジションマーク(パールのインレイ): 3・5・7・9フレットは1つ、12フレットは2つ */}
+          {[3, 5, 7, 9].map((f) => (
+            <circle key={`inlay-${f}`} cx={fbLeft + f * fretW - fretW / 2} cy={fbTop + 2.5 * stringGap} r={5} fill="#e8e2d2" opacity={0.22} />
+          ))}
+          {[1.5, 3.5].map((k) => (
+            <circle key={`inlay12-${k}`} cx={fbLeft + 12 * fretW - fretW / 2} cy={fbTop + k * stringGap} r={5} fill="#e8e2d2" opacity={0.22} />
+          ))}
+
           {Array.from({ length: FRETS + 1 }, (_, f) => {
             const x = fbLeft + f * fretW;
             return (
@@ -2773,8 +2848,8 @@ export default function StaffToFretboard({
                   x2={x}
                   y1={fbTop}
                   y2={fbTop + 5 * stringGap}
-                  stroke="var(--border-strong)"
-                  strokeWidth={f === 0 ? 3 : 1}
+                  stroke={f === 0 ? "#d8d2c4" : "#8d877b"}
+                  strokeWidth={f === 0 ? 5 : 2}
                 />
                 {[3, 5, 7, 9, 12].includes(f) && f > 0 && (
                   <text
@@ -2800,7 +2875,9 @@ export default function StaffToFretboard({
                   x2={fbLeft + FRETS * fretW}
                   y1={y}
                   y2={y}
-                  stroke="var(--border-strong)"
+                  stroke="#cfc8b8"
+                  strokeOpacity={0.75}
+                  strokeWidth={0.8 + sIdx * 0.35}
                 />
                 <text
                   x={fbLeft - 14}
@@ -2907,6 +2984,7 @@ export default function StaffToFretboard({
       <div id="legend">
         五線譜をクリックして音を置く（同じ場所をもう一度で消去）。音符が置かれると下に♮/#/♭・音価の切り替えボタンが出ます。
       </div>
+      </section>
     </>
   );
 }
