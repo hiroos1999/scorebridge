@@ -668,6 +668,15 @@ export default function StaffToFretboard({
   const [chordType, setChordType] = useState<string>("maj7");
   const [chordInversion, setChordInversion] = useState(0);
 
+  // スマホなど狭い画面では指板を0〜7フレットに絞り、音の丸を読める大きさで表示する
+  const [narrowFretboard, setNarrowFretboard] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 640px)");
+    const update = () => setNarrowFretboard(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
   const [isPlaying, setIsPlaying] = useState(false);
   // ローカルなstartGridは小節をまたいで一意ではないため、どの小節の音符かも保持する。
   const [playingNoteKey, setPlayingNoteKey] = useState<{ measureIndex: number; startGrid: number } | null>(null);
@@ -2047,6 +2056,7 @@ export default function StaffToFretboard({
           margin: 0 auto;
           padding: 0.75rem;
         }
+        select { min-width:0; max-width:100%; }
         select, button {
           height: 36px;
           border-radius: 8px;
@@ -2059,7 +2069,7 @@ export default function StaffToFretboard({
         button:hover { background: var(--surface-2); cursor: pointer; }
         button:disabled { opacity: 0.4; cursor: default; }
         #controls { display:flex; align-items:center; gap:6px; margin: 0 0 0.5rem; flex-wrap: wrap; }
-        .toolbar-group { display:flex; align-items:center; gap:6px; padding-right:8px; margin-right:2px; border-right: 1px solid var(--border); }
+        .toolbar-group { display:flex; flex-wrap:wrap; align-items:center; gap:6px; max-width:100%; padding-right:8px; margin-right:2px; border-right: 1px solid var(--border); }
         .toolbar-group:last-child { border-right: none; }
         #legend { font-size: 12px; color: var(--text-secondary); margin-top: 0.5rem; }
         #fretboard-wrap { overflow-x: auto; }
@@ -2602,8 +2612,8 @@ export default function StaffToFretboard({
       <div id="fretboard-wrap">
         <svg
           id="fretboard"
-          viewBox="0 0 940 220"
-          style={{ width: "100%", height: "auto", display: "block", minWidth: "660px" }}
+          viewBox={narrowFretboard ? `0 -14 ${fbLeft + 7 * fretW + 8} 234` : "0 -14 940 234"}
+          style={{ width: "100%", height: "auto", display: "block", minWidth: narrowFretboard ? undefined : "660px" }}
         >
           {Array.from({ length: FRETS + 1 }, (_, f) => {
             const x = fbLeft + f * fretW;
@@ -2620,7 +2630,7 @@ export default function StaffToFretboard({
                 {[3, 5, 7, 9, 12].includes(f) && f > 0 && (
                   <text
                     x={x - fretW / 2}
-                    y={fbTop - 10}
+                    y={fbTop - 21}
                     textAnchor="middle"
                     fontSize={13}
                     fill="var(--text-secondary)"
@@ -2678,7 +2688,7 @@ export default function StaffToFretboard({
                         <circle
                           cx={x}
                           cy={y}
-                          r={17}
+                          r={20}
                           fill="none"
                           stroke="var(--danger)"
                           strokeWidth={3}
@@ -2688,15 +2698,15 @@ export default function StaffToFretboard({
                       <circle
                         cx={x}
                         cy={y}
-                        r={isPlaying ? 14 : 12}
+                        r={isPlaying ? 17 : 15}
                         style={{ fill }}
-                        opacity={isHarmonyTone ? 0.35 : 1}
+                        opacity={isHarmonyTone ? 0.45 : 1}
                       />
                       <text
                         x={x}
-                        y={y + 4}
+                        y={y + 5}
                         textAnchor="middle"
-                        fontSize={10}
+                        fontSize={13}
                         fontWeight="bold"
                         opacity={isHarmonyTone ? 0.7 : 1}
                         style={{
@@ -2716,6 +2726,34 @@ export default function StaffToFretboard({
           })}
         </svg>
       </div>
+
+      <div
+        id="degree-legend"
+        aria-label="音の色の見方"
+        style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}
+      >
+        {[
+          { label: "Do 主音", role: "danger" },
+          { label: "Mi 3度", role: "warning" },
+          { label: "Fa 4度", role: "accent" },
+          { label: "Sol・Ti 5度・7度", role: "success" },
+          { label: "Re・La 2度・6度", role: "pro" },
+          { label: "半音(臨時記号)", role: "gray" },
+        ].map((it) => (
+          <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span
+              aria-hidden
+              style={{ width: 12, height: 12, borderRadius: "50%", display: "inline-block", background: colorFor(it.role)[0] }}
+            />
+            {it.label}
+          </span>
+        ))}
+      </div>
+      {narrowFretboard && (
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
+          ※ 指板は0〜7フレットを表示しています。横向きにすると12フレットまで見えます。
+        </div>
+      )}
 
       <div id="legend">
         五線譜をクリックして音を置く（同じ場所をもう一度で消去）。音符が置かれると下に♮/#/♭・音価の切り替えボタンが出ます。
