@@ -238,17 +238,18 @@ const BLACKBIRD_BARS: BarSpec[] = [
 //    コードは一般的な進行（Bbm7-Eb7-Abmaj7-Db7 …）。
 type TeaChord = { root: number; kind: string; at: number; inv?: number };
 const TEA_PITCH: Record<string, [number, number]> = {
-  Eb4: [12, -1], E4: [12, 0], D4: [13, 0], C4: [14, 0], G5: [3, 0], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
+  Eb4: [12, -1], E4: [12, 0], Gb4: [10, -1], Bb3: [15, -1], Ab3: [16, -1], Cb4: [14, -1], D4: [13, 0], C4: [14, 0], G5: [3, 0], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
   C5: [7, 0], Cb5: [7, -1], D5: [6, 0], Db5: [6, -1], Eb5: [5, -1], E5: [5, 0], F5: [4, 0],
 };
 // [音名または"r"(休符), 開始グリッド, 長さ(グリッド数。4=4分, 2=8分, 6=付点4分)]
-type TeaNote = [string, number, number];
+type TeaNote = [string, number, number, boolean?]; // 4番目はtrueで3連符
 function teaBar(notes: TeaNote[], chords: TeaChord[]): Measure {
   return {
-    notes: notes.map(([name, g, d]) => {
+    notes: notes.map(([name, g, d, tri]) => {
       if (name === "r") return rest(g, d);
       const [row, acc] = TEA_PITCH[name];
-      return note(g, d, row, acc);
+      const n = note(g, d, row, acc);
+      return tri ? { ...n, triplet: true } : n;
     }),
     harmonies: chords.map((c) => ({ offsetGrid: c.at, root: c.root, kind: c.kind, inversion: c.inv ?? 0 })),
   };
@@ -503,6 +504,59 @@ const DANNY_BOY_FULL: Measure[] = [
   teaBar([["r", 0, 16]], [tc(PC.F, "m7"), tc(PC.Bb, "7", 8)]),
 ];
 
+// Smoke Gets in Your Eyes（Jerome Kern, 1933）フルコーラス Eb。楽譜画像から読み取り。
+// 形式: A（1番かっこ）+ A（2番かっこ）+ B（Gb調の中間部）+ A = 32小節。
+// Bはキー(変ト長調)の調号を使わず、Eb調の調号のまま臨時記号で実音を表している。
+const SG = { eb: tc(PC.Eb, "maj7"), fm: tc(PC.F, "m7") };
+const SG_A_START: Measure[] = [
+  teaBar([["Eb4", 0, 8], ["D4", 8, 2], ["F4", 10, 2], ["Eb4", 12, 2], ["C4", 14, 2]],
+    [SG.eb, tc(PC.G, "m7", 8), tc(PC.Gb, "dim", 12)]),
+  teaBar([["Ab4", 0, 8], ["G4", 8, 2], ["Bb4", 10, 2], ["Ab4", 12, 2], ["F4", 14, 2]], [SG.fm, tc(PC.Bb, "7", 8)]),
+  teaBar([["Eb5", 0, 16]], [SG.eb, tc(PC.G, "7", 8)]),
+  teaBar([["Eb5", 0, 8], ["F5", 8, 2], ["Eb5", 10, 2], ["B4", 12, 2], ["C5", 14, 2]], [tc(PC.Ab, "maj7"), tc(PC.A, "dim", 8)]),
+];
+const SG_A_MID: Measure[] = [
+  teaBar([["D5", 0, 8], ["C5", 8, 2], ["Bb4", 10, 2], ["C4", 12, 2], ["Eb4", 14, 2]], [tc(PC.G, "m7", 0, 1), tc(PC.C, "m7", 8)]),
+  teaBar([["Bb4", 0, 8], ["C5", 8, 2], ["Bb4", 10, 2], ["Bb3", 12, 2], ["C4", 14, 2]], [SG.fm, tc(PC.Bb, "7", 8)]),
+];
+const SG_END1: Measure[] = [
+  teaBar([["G4", 0, 16]], [tc(PC.G, "7"), tc(PC.C, "7", 8)]),
+  teaBar([["F4", 0, 16]], [SG.fm, tc(PC.Bb, "7", 8)]),
+];
+const SG_END2: Measure[] = [
+  teaBar([["Eb4", 0, 16]], [SG.eb, tc(PC.Ab, "7", 8)]),
+  teaBar([["Eb4", 0, 16]], [SG.eb, tc(PC.Db, "m7", 8), tc(PC.Gb, "7", 12)]),
+];
+const SG_B_START = (): Measure[] => [
+  teaBar([["Eb4", 0, 2], ["Gb4", 2, 2], ["Eb5", 4, 4], ["Eb5", 8, 2], ["Bb4", 10, 2], ["Db5", 12, 2], ["Cb5", 14, 2]], [tc(PC.B, "maj7")]),
+];
+const SG_B: Measure[] = [
+  ...SG_B_START(),
+  teaBar([["Eb4", 0, 2], ["Gb4", 2, 2], ["Bb4", 4, 4], ["Bb4", 8, 2], ["Ab4", 10, 2],
+    ["Gb4", 12, 2, true], ["Ab3", 40 / 3, 2, true], ["Cb4", 44 / 3, 2, true]], [tc(PC.Ab, "7")]),
+  teaBar([["Gb4", 0, 8], ["Gb4", 8, 8]], [tc(PC.Db, "m7"), tc(PC.Ab, "7", 8)]),
+  teaBar([["Gb4", 0, 16]], [tc(PC.Db, "m7"), tc(PC.Gb, "7", 8)]),
+  ...SG_B_START(),
+  teaBar([["Eb4", 0, 2], ["Gb4", 2, 2], ["Bb4", 4, 4], ["Bb4", 8, 2], ["Ab4", 10, 2], ["G4", 12, 2], ["F4", 14, 2]],
+    [tc(PC.Ab, "m7"), tc(PC.Bb, "7", 8), tc(PC.Bb, "7", 12, 3)]),
+  teaBar([["G4", 0, 8], ["G4", 8, 8]], [tc(PC.G, "m7"), tc(PC.C, "7", 8)]),
+  teaBar([["F4", 0, 16]], [SG.fm, tc(PC.Bb, "7", 8)]),
+];
+const SG_A_LAST: Measure[] = [
+  ...SG_A_START,
+  teaBar([["D5", 0, 8], ["C5", 8, 2], ["Bb4", 10, 2], ["C4", 12, 2, true], ["Eb4", 40 / 3, 2, true], ["G4", 44 / 3, 2, true]],
+    [tc(PC.G, "m7", 0, 1), tc(PC.C, "m7", 8)]),
+  teaBar([["Bb4", 0, 8], ["C5", 8, 2], ["Bb4", 10, 2], ["Bb4", 12, 2], ["C5", 14, 2]], [SG.fm, tc(PC.Bb, "7", 8)]),
+  teaBar([["Eb5", 0, 16]], [SG.eb]),
+  teaBar([["r", 0, 16]], [SG.fm, tc(PC.Bb, "7", 8)]),
+];
+const SMOKE_GETS_FULL: Measure[] = [
+  ...SG_A_START, ...SG_A_MID, ...SG_END1,
+  ...SG_A_START, ...SG_A_MID, ...SG_END2,
+  ...SG_B,
+  ...SG_A_LAST,
+];
+
 const ROW_MIDI = [84, 83, 81, 79, 77, 76, 74, 72, 71, 69, 67, 65, 64, 62, 60, 59, 57, 55, 53, 52];
 function midiToNote(startGrid: number, duration: number, midi: number): Note {
   let rowIdx = ROW_MIDI.indexOf(midi);
@@ -569,6 +623,14 @@ export const TEMPLATES: Template[] = [
     useFlats: true,
     timeSig: FOUR_FOUR,
     measures: bebop251(PC.Bb, -2),
+  },
+  {
+    id: "smoke-gets",
+    label: "Smoke Gets in Your Eyes — full chorus (Eb, Kern)",
+    root: PC.Eb,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: SMOKE_GETS_FULL,
   },
   {
     id: "danny-boy",
