@@ -238,7 +238,7 @@ const BLACKBIRD_BARS: BarSpec[] = [
 //    コードは一般的な進行（Bbm7-Eb7-Abmaj7-Db7 …）。
 type TeaChord = { root: number; kind: string; at: number; inv?: number };
 const TEA_PITCH: Record<string, [number, number]> = {
-  Eb4: [12, -1], E4: [12, 0], Gb4: [10, -1], Bb3: [15, -1], Ab3: [16, -1], Cb4: [14, -1], D4: [13, 0], C4: [14, 0], G5: [3, 0], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
+  Eb4: [12, -1], E4: [12, 0], "G#4": [10, 1], Db4: [13, -1], B3: [15, 0], Gb4: [10, -1], Bb3: [15, -1], Ab3: [16, -1], Cb4: [14, -1], D4: [13, 0], C4: [14, 0], G5: [3, 0], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
   C5: [7, 0], Cb5: [7, -1], D5: [6, 0], Db5: [6, -1], Eb5: [5, -1], E5: [5, 0], F5: [4, 0],
 };
 // [音名または"r"(休符), 開始グリッド, 長さ(グリッド数。4=4分, 2=8分, 6=付点4分)]
@@ -557,6 +557,85 @@ const SMOKE_GETS_FULL: Measure[] = [
   ...SG_A_LAST,
 ];
 
+// Yesterdays（Jerome Kern, 1933）フルコーラス Dm。楽譜画像から読み取り。
+// 形式: A（8）+ B（4）+ 1番かっこ（4）、リピートして A（8）+ B（4）+ 2番かっこ（4）+ コーダの1小節 = 33小節。
+const YD_DM = tc(PC.D, "m7");
+const YD_A: Measure[] = [
+  teaBar([["A4", 0, 12], ["F4", 12, 4]], [YD_DM]),
+  teaBar([["G4", 0, 16]], [tc(PC.E, "m7b5"), tc(PC.A, "7", 8)]),
+  teaBar([["A4", 0, 12], ["F4", 12, 4]], [YD_DM]),
+  teaBar([["G4", 0, 16]], [tc(PC.E, "m7b5"), tc(PC.A, "7", 8)]),
+  teaBar([["D4", 0, 4], ["E4", 4, 4], ["F4", 8, 4], ["G4", 12, 4]], [YD_DM]),
+  teaBar([["G#4", 0, 4], ["A4", 4, 4], ["B4", 8, 4], ["C5", 12, 4]], [YD_DM]),
+  teaBar([["F5", 0, 12], ["B4", 12, 4]], [tc(PC.B, "m7b5")]),
+  teaBar([["E5", 0, 16]], [tc(PC.E, "7")]),
+];
+const YD_B: Measure[] = [
+  teaBar([["F5", 0, 12], ["A4", 12, 4]], [tc(PC.A, "7")]),
+  teaBar([["E5", 0, 16]], [tc(PC.D, "7")]),
+  teaBar([["E5", 0, 12], ["G4", 12, 4]], [tc(PC.G, "7")]),
+  teaBar([["D5", 0, 16]], [tc(PC.C, "7")]),
+];
+const YD_END: Measure[] = [
+  teaBar([["D5", 0, 12], ["A4", 12, 4]], [tc(PC.F, "7")]),
+  teaBar([["C5", 0, 4], ["Bb4", 4, 4], ["F4", 8, 4], ["G4", 12, 4]], [tc(PC.Bb, "maj7")]),
+  teaBar([["A4", 0, 16]], [tc(PC.E, "m7b5")]),
+  teaBar([["A4", 0, 8], ["A4", 8, 8]], [tc(PC.A, "7")]),
+];
+const YESTERDAYS_FULL: Measure[] = [
+  ...YD_A, ...YD_B, ...YD_END, ...YD_A, ...YD_B, ...YD_END,
+  teaBar([["A4", 0, 16]], [YD_DM]),
+];
+
+// All the Things You Are（Jerome Kern, 1939）フルコーラス Ab。楽譜画像から読み取り（イントロは省略）。
+// 形式: A（8）+ B（8）+ C（8）+ D（12）= 36小節。
+const AT_A_HEAD: Measure[] = [
+  teaBar([["Ab4", 0, 16]], [tc(PC.F, "m7")]),
+  teaBar([["Db5", 0, 12], ["Ab4", 12, 4]], [tc(PC.Bb, "m7")]),
+  teaBar([["G4", 0, 4], ["G4", 4, 4], ["G4", 8, 4], ["G4", 12, 4]], [tc(PC.Eb, "7")]),
+  teaBar([["G4", 0, 4], ["C5", 4, 8], ["G4", 12, 4]], [tc(PC.Ab, "maj7")]),
+];
+const AT_A: Measure[] = [
+  ...AT_A_HEAD,
+  teaBar([["F4", 0, 4], ["F4", 4, 4], ["F4", 8, 4], ["F4", 12, 4]], [tc(PC.Db, "maj7")]),
+  teaBar([["F4", 0, 4], ["B4", 4, 8], ["F4", 12, 4]], [tc(PC.D, "m7b5"), tc(PC.G, "7", 8)]),
+  teaBar([["E4", 0, 16]], [tc(PC.C, "maj7")]),
+  teaBar([["E4", 0, 16]], [tc(PC.C, "maj7")]),
+];
+const AT_B: Measure[] = [
+  teaBar([["Eb4", 0, 16]], [tc(PC.C, "m7")]),
+  teaBar([["Ab4", 0, 12], ["Eb4", 12, 4]], [tc(PC.F, "m7")]),
+  teaBar([["D4", 0, 4], ["D4", 4, 4], ["D4", 8, 4], ["D4", 12, 4]], [tc(PC.Bb, "7")]),
+  teaBar([["D4", 0, 4], ["G4", 4, 8], ["D4", 12, 4]], [tc(PC.Eb, "maj7")]),
+  teaBar([["C4", 0, 4], ["C4", 4, 4], ["C4", 8, 4], ["C4", 12, 4]], [tc(PC.Ab, "maj7")]),
+  teaBar([["C4", 0, 4, true], ["D4", 8 / 3, 4, true], ["Eb4", 16 / 3, 4, true], ["D4", 8, 4], ["C4", 12, 4]],
+    [tc(PC.A, "m7b5"), tc(PC.D, "7", 8)]),
+  teaBar([["B3", 0, 16]], [tc(PC.G, "maj7")]),
+  teaBar([["B3", 0, 4], ["D4", 4, 4], ["G4", 8, 4], ["D5", 12, 4]], [tc(PC.G, "maj7")]),
+];
+const AT_C: Measure[] = [
+  teaBar([["D5", 0, 8], ["C5", 8, 8]], [tc(PC.A, "m7")]),
+  teaBar([["C5", 0, 4], ["Eb4", 4, 4], ["E4", 8, 4], ["C5", 12, 4]], [tc(PC.D, "7")]),
+  teaBar([["B4", 0, 16]], [tc(PC.G, "maj7")]),
+  teaBar([["B4", 0, 4], ["D4", 4, 4], ["G4", 8, 4], ["B4", 12, 4]], [tc(PC.G, "maj7")]),
+  teaBar([["B4", 0, 8], ["A4", 8, 8]], [tc(PC.Gb, "m7b5")]),
+  teaBar([["A4", 0, 4], ["Bb3", 4, 4], ["B3", 8, 4], ["A4", 12, 4]], [tc(PC.B, "7")]),
+  teaBar([["G#4", 0, 16]], [tc(PC.E, "maj7")]),
+  teaBar([["G#4", 0, 16]], [tc(PC.C, "7")]),
+];
+const AT_D: Measure[] = [
+  ...AT_A_HEAD,
+  teaBar([["F4", 0, 16]], [tc(PC.Db, "maj7")]),
+  teaBar([["Eb5", 0, 8], ["Db5", 8, 8]], [tc(PC.Db, "m7")]),
+  teaBar([["Eb4", 0, 4], ["Eb4", 4, 4], ["Eb4", 8, 4, true], ["Eb4", 32 / 3, 4, true], ["Eb4", 40 / 3, 4, true]], [tc(PC.C, "m7")]),
+  teaBar([["G4", 0, 12], ["F4", 12, 4]], [tc(PC.B, "dim")]),
+  teaBar([["Db4", 0, 4], ["F4", 4, 4], ["Ab4", 8, 4], ["Db5", 12, 4]], [tc(PC.Bb, "m7")]),
+  teaBar([["F5", 0, 8], ["G4", 8, 8]], [tc(PC.Eb, "7")]),
+  teaBar([["Ab4", 0, 16]], [tc(PC.Ab, "maj7")]),
+  teaBar([["Ab4", 0, 16]], [tc(PC.Ab, "maj7")]),
+];
+const ALL_THE_THINGS_FULL: Measure[] = [...AT_A, ...AT_B, ...AT_C, ...AT_D];
+
 const ROW_MIDI = [84, 83, 81, 79, 77, 76, 74, 72, 71, 69, 67, 65, 64, 62, 60, 59, 57, 55, 53, 52];
 function midiToNote(startGrid: number, duration: number, midi: number): Note {
   let rowIdx = ROW_MIDI.indexOf(midi);
@@ -623,6 +702,22 @@ export const TEMPLATES: Template[] = [
     useFlats: true,
     timeSig: FOUR_FOUR,
     measures: bebop251(PC.Bb, -2),
+  },
+  {
+    id: "yesterdays",
+    label: "Yesterdays — full chorus (Dm, Kern)",
+    root: PC.F,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: YESTERDAYS_FULL,
+  },
+  {
+    id: "all-the-things",
+    label: "All the Things You Are — full chorus (Ab, Kern)",
+    root: PC.Ab,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: ALL_THE_THINGS_FULL,
   },
   {
     id: "smoke-gets",
