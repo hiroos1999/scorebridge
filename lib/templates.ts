@@ -371,49 +371,75 @@ const BLACKBIRD_BARS: BarSpec[] = [
   [{ root: PC.F, kind: "maj7" }],
 ];
 
-// 9. Tea for Two（Vincent Youmans, 1924）— C、
-//    ii-V-Iを繰り返す循環進行で知られる（ご指定通りii-Vを含む）。
-const TEA_FOR_TWO_BARS: BarSpec[] = [
-  [
-    { root: PC.D, kind: "m7" },
-    { root: PC.G, kind: "7" },
-  ],
-  [{ root: PC.C, kind: "maj7" }],
-  [
-    { root: PC.D, kind: "m7" },
-    { root: PC.G, kind: "7" },
-  ],
-  [{ root: PC.C, kind: "maj7" }],
-  [
-    { root: PC.E, kind: "m7" },
-    { root: PC.A, kind: "7" },
-  ],
-  [
-    { root: PC.D, kind: "m7" },
-    { root: PC.G, kind: "7" },
-  ],
-  [{ root: PC.C, kind: "maj7" }],
-  [{ root: PC.C, kind: "maj7" }],
-];
-
-// ユーザーが目視で書き出した実際のメロディ（音名・音価）をnote()/rest()で変換。
-const TEA_FOR_TWO_A_NOTES: Note[][] = [
-  // 1. Bb4(付点4分) C5(8分) D5(付点4分) Eb5(8分)
-  [note(0, 6, 8, -1), note(6, 2, 7), note(8, 6, 6), note(14, 2, 5, -1)],
-  // 2. D5(付点4分) C5(8分) Bb4(付点4分) C5(8分)
-  [note(0, 6, 6), note(6, 2, 7), note(8, 6, 8, -1), note(14, 2, 7)],
-  // 3. Bb4(付点4分) C5(8分) D5(付点4分) Bb4(8分)
-  [note(0, 6, 8, -1), note(6, 2, 7), note(8, 6, 6), note(14, 2, 8, -1)],
-  // 4. C5(4分) D5(8分) Eb5(4分) F5(8分) + 4分休符
-  [note(0, 4, 7), note(4, 2, 6), note(6, 4, 5, -1), note(10, 2, 4), rest(12, 4)],
-  // 5. 3小節目と同じ音型
-  [note(0, 6, 8, -1), note(6, 2, 7), note(8, 6, 6), note(14, 2, 8, -1)],
-  // 6. D5(付点4分) C5(8分) Bb4(4分) + 4分休符
-  [note(0, 6, 6), note(6, 2, 7), note(8, 4, 8, -1), rest(12, 4)],
-  // 7. Bb4(全音符)
-  [note(0, 16, 8, -1)],
-  // 8. C5(4分) 8分休符 2分休符 + 残り8分休符（16グリッドに満たない分を補完）
-  [note(0, 4, 7), rest(4, 2), rest(6, 8), rest(14, 2)],
+// 9. Tea for Two（Vincent Youmans, 1924 / パブリックドメイン）— Abのキー、Aセクション8小節。
+//    メロディは原典の楽譜の画像を拡大して、音の高さと長さを1音ずつ読み取って入力したもの
+//    （7・8小節目は1番かっこ）。コードは一般的な進行（Bbm7-Eb7-Abmaj7-Db7…）。
+//    rows: Ab4=A4段(9)+♭, F4=11, G4=10, Eb4=E4段(12)+♭, C5=7
+const TEA_FOR_TWO_A: Measure[] = [
+  // 1. Ab(付点4分) F(8分) G(付点4分) F(8分)
+  {
+    notes: [note(0, 6, 9, -1), note(6, 2, 11), note(8, 6, 10), note(14, 2, 11)],
+    harmonies: [
+      { offsetGrid: 0, root: PC.Bb, kind: "m7", inversion: 0 },
+      { offsetGrid: 8, root: PC.Eb, kind: "7", inversion: 0 },
+    ],
+  },
+  // 2. Ab(4分) F(8分) G(8分、次のGにタイ) G(付点4分) Eb(8分)
+  {
+    notes: [note(0, 4, 9, -1), note(4, 2, 11), note(6, 2, 10), note(8, 6, 10), note(14, 2, 12, -1)],
+    harmonies: [
+      { offsetGrid: 0, root: PC.Bb, kind: "m7", inversion: 0 },
+      { offsetGrid: 8, root: PC.Eb, kind: "7", inversion: 0 },
+    ],
+  },
+  // 3. G(付点4分) Eb(8分) F(付点4分) Eb(8分)
+  {
+    notes: [note(0, 6, 10), note(6, 2, 12, -1), note(8, 6, 11), note(14, 2, 12, -1)],
+    harmonies: [
+      { offsetGrid: 0, root: PC.Ab, kind: "maj7", inversion: 0 },
+      { offsetGrid: 8, root: PC.Db, kind: "7", inversion: 0 },
+    ],
+  },
+  // 4. G(4分) Eb(8分) F(8分) F(付点4分、前のFにタイ) F(8分)
+  {
+    notes: [note(0, 4, 10), note(4, 2, 12, -1), note(6, 2, 11), note(8, 6, 11), note(14, 2, 11)],
+    harmonies: [
+      { offsetGrid: 0, root: PC.C, kind: "m7", inversion: 0 },
+      { offsetGrid: 8, root: PC.B, kind: "dim", inversion: 0 },
+    ],
+  },
+  // 5. 1小節目と同じ音型
+  {
+    notes: [note(0, 6, 9, -1), note(6, 2, 11), note(8, 6, 10), note(14, 2, 11)],
+    harmonies: [
+      { offsetGrid: 0, root: PC.Bb, kind: "m7", inversion: 0 },
+      { offsetGrid: 8, root: PC.Eb, kind: "7", inversion: 0 },
+    ],
+  },
+  // 6. Ab(付点4分) F(8分) G(4分) Eb(4分)
+  {
+    notes: [note(0, 6, 9, -1), note(6, 2, 11), note(8, 4, 10), note(12, 4, 12, -1)],
+    harmonies: [
+      { offsetGrid: 0, root: PC.Bb, kind: "m7", inversion: 0 },
+      { offsetGrid: 8, root: PC.Eb, kind: "7", inversion: 0 },
+    ],
+  },
+  // 7. (1番かっこ) C(全音符、次の小節へタイ)
+  {
+    notes: [note(0, 16, 7)],
+    harmonies: [
+      { offsetGrid: 0, root: PC.Ab, kind: "maj7", inversion: 0 },
+      { offsetGrid: 8, root: PC.Bb, kind: "m7", inversion: 0 },
+    ],
+  },
+  // 8. C(4分、前の小節からタイ) 4分休符 2分休符
+  {
+    notes: [note(0, 4, 7), rest(4, 4), rest(8, 8)],
+    harmonies: [
+      { offsetGrid: 0, root: PC.C, kind: "m7", inversion: 0 },
+      { offsetGrid: 8, root: PC.Db, kind: "maj7", inversion: 0 },
+    ],
+  },
 ];
 
 // ---- オリジナルのビバップ ii–V–I フレーズ ----
@@ -563,10 +589,10 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "tea-for-two-a",
-    label: "Tea for Two — Aセクション (C, Youmans)",
-    root: PC.C,
+    label: "Tea for Two — A section (Ab, Youmans)",
+    root: PC.Ab,
     useFlats: true,
     timeSig: FOUR_FOUR,
-    measures: withNotes(buildStandardA(TEA_FOR_TWO_BARS, true, START_ROW), TEA_FOR_TWO_A_NOTES),
+    measures: TEA_FOR_TWO_A,
   },
 ];
