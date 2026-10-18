@@ -141,58 +141,6 @@ function buildStandardA(bars: BarSpec[], useFlats: boolean, startRow: number): M
 // メロディの初期音域の基準（G4付近）。どの曲もここから最も近い段を辿って始まる。
 const START_ROW = 10;
 
-// 'S Wonderful（George Gershwin, 1927 / パブリックドメイン）のAセクション
-// （最初の8小節）。コード進行はEbメジャーキーの、このスタンダードで一般的に
-// 知られている進行（Ebmaj7-Cm7-Fm7-Bb7を軸にした、いわゆるI-vi-ii-V系の
-// 循環）に基づく。メロディは原曲旋律の書き写しではなく、著作権に配慮し、
-// 各小節のコードトーンをアルペジオ化しただけのシンプルな練習フレーズとして
-// 新たに作成したもの（4分音符中心、最終小節のみ全音符でトニックに着地）。
-const S_WONDERFUL_A: Measure[] = [
-  // 1. Bb4(付点8分) C5(16分) Eb5(タイでのばし、小節末まで=付点2分相当)
-  {
-    notes: [note(0, 3, 8, -1), note(3, 1, 7), note(4, 12, 5, -1)],
-    harmonies: [{ offsetGrid: 0, root: PC.Eb, kind: "maj7", inversion: 0 }],
-  },
-  // 2. D5(付点8分) Eb5(16分) F5(タイでのばし、小節末まで=付点2分相当)
-  {
-    notes: [note(0, 3, 6), note(3, 1, 5, -1), note(4, 12, 4)],
-    harmonies: [{ offsetGrid: 0, root: PC.C, kind: "m7", inversion: 0 }],
-  },
-  // 3. C5(付点8分) D5(16分) F5(タイでのばし、小節末まで=付点2分相当)
-  {
-    notes: [note(0, 3, 7), note(3, 1, 6), note(4, 12, 4)],
-    harmonies: [{ offsetGrid: 0, root: PC.F, kind: "m7", inversion: 0 }],
-  },
-  // 4. Eb5(付点4分) D5(8分) C5(付点4分) Bb4(8分、ちょうど小節末まで)
-  {
-    notes: [note(0, 6, 5, -1), note(6, 2, 6), note(8, 6, 7), note(14, 2, 8, -1)],
-    harmonies: [{ offsetGrid: 0, root: PC.Bb, kind: "7", inversion: 0 }],
-  },
-  // 5. 1小節目と同じ音型
-  {
-    notes: [note(0, 3, 8, -1), note(3, 1, 7), note(4, 12, 5, -1)],
-    harmonies: [{ offsetGrid: 0, root: PC.Eb, kind: "maj7", inversion: 0 }],
-  },
-  // 6. 2小節目と同じ音型
-  {
-    notes: [note(0, 3, 6), note(3, 1, 5, -1), note(4, 12, 4)],
-    harmonies: [{ offsetGrid: 0, root: PC.C, kind: "m7", inversion: 0 }],
-  },
-  // 7. C5(付点8分) D5(16分) F5(2分、タイなし) + 4分休符で終止
-  {
-    notes: [note(0, 3, 7), note(3, 1, 6), note(4, 8, 4), rest(12, 4)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.F, kind: "m7", inversion: 0 },
-      { offsetGrid: 8, root: PC.Bb, kind: "7", inversion: 0 },
-    ],
-  },
-  // 8. Eb5(2分) D5(2分)
-  {
-    notes: [note(0, 8, 5, -1), note(8, 8, 6)],
-    harmonies: [{ offsetGrid: 0, root: PC.Eb, kind: "maj7", inversion: 0 }],
-  },
-];
-
 const FOUR_FOUR: TimeSignature = { numerator: 4, denominator: 4 };
 
 // 以下9曲は、一般的に知られるスタンダードのAセクション進行（8小節）に基づき、
@@ -378,7 +326,7 @@ const BLACKBIRD_BARS: BarSpec[] = [
 type TeaChord = { root: number; kind: string; at: number };
 const TEA_PITCH: Record<string, [number, number]> = {
   Eb4: [12, -1], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
-  C5: [7, 0], Db5: [6, -1], Eb5: [5, -1], E5: [5, 0], F5: [4, 0],
+  C5: [7, 0], Cb5: [7, -1], D5: [6, 0], Db5: [6, -1], Eb5: [5, -1], E5: [5, 0], F5: [4, 0],
 };
 // [音名または"r"(休符), 開始グリッド, 長さ(グリッド数。4=4分, 2=8分, 6=付点4分)]
 type TeaNote = [string, number, number];
@@ -442,6 +390,53 @@ const TEA_FOR_TWO_FULL: Measure[] = [
   ...TEA_B,
   ...TEA_A_COMMON, ...TEA_A_END2,
   ...TEA_C,
+];
+
+// 10. 'S Wonderful（George Gershwin, 1927 / パブリックドメイン）— Ebのキー、フルコーラス32小節。
+//    メロディは原典の楽譜の画像を拡大して、音の高さと長さを1音ずつ読み取って入力したもの。
+//    形式: A(8) → A(8, 2番かっこ) → B(8, Gのキー) → C(8)。コードは一般的な進行。
+const EB = tc(PC.Eb, "maj7");
+const SW_A_SHARED: Measure[] = [
+  teaBar([["Bb4", 0, 6], ["Bb4", 6, 2], ["G4", 8, 8]], [EB]),
+  teaBar([["G4", 0, 16]], []),
+  teaBar([["Bb4", 0, 6], ["Bb4", 6, 2], ["G4", 8, 8]], [tc(PC.E, "dim")]),
+  teaBar([["G4", 0, 16]], []),
+  teaBar([["Bb4", 0, 6], ["Bb4", 6, 2], ["G4", 8, 8]], [tc(PC.F, "m7")]),
+  teaBar([["G4", 0, 8], ["Bb4", 8, 8]], [tc(PC.Bb, "7")]),
+];
+const SW_A1_END: Measure[] = [
+  teaBar([["Eb4", 0, 16]], [EB, tc(PC.C, "m7", 8)]),
+  teaBar([["Eb4", 0, 12], ["r", 12, 4]], [tc(PC.F, "m7"), tc(PC.Bb, "7", 8)]),
+];
+const SW_A2_END: Measure[] = [
+  teaBar([["C5", 0, 16]], [EB]),
+  teaBar([["C5", 0, 8], ["Eb5", 8, 8]], [tc(PC.A, "m7b5"), tc(PC.D, "7", 8)]),
+];
+const SW_B: Measure[] = [
+  teaBar([["D5", 0, 16]], [tc(PC.G, "maj7"), tc(PC.E, "m7", 8)]),
+  teaBar([["r", 0, 4], ["D5", 4, 4], ["D5", 8, 4], ["D5", 12, 4]], [tc(PC.A, "m7"), tc(PC.D, "7", 8)]),
+  teaBar([["E5", 0, 6], ["D5", 6, 2], ["D5", 8, 8]], [tc(PC.B, "m7"), tc(PC.E, "7", 8)]),
+  teaBar([["D5", 0, 16]], [tc(PC.A, "m7"), tc(PC.D, "7", 8)]),
+  teaBar([["r", 0, 4], ["D5", 4, 4], ["D5", 8, 4], ["D5", 12, 4]], [tc(PC.G, "7")]),
+  teaBar([["D5", 0, 4], ["D5", 4, 4], ["D5", 8, 4], ["D5", 12, 4]], [tc(PC.C, "7")]),
+  teaBar([["D5", 0, 6], ["C5", 6, 2], ["C5", 8, 8]], [tc(PC.F, "m7")]),
+  teaBar([["C5", 0, 8], ["Cb5", 8, 8]], [tc(PC.Bb, "7")]),
+];
+const SW_C: Measure[] = [
+  teaBar([["Bb4", 0, 6], ["Bb4", 6, 2], ["G4", 8, 8]], [EB]),
+  teaBar([["G4", 0, 16]], []),
+  teaBar([["Eb5", 0, 6], ["Eb5", 6, 2], ["C5", 8, 8]], [tc(PC.Gb, "dim")]),
+  teaBar([["C5", 0, 16]], []),
+  teaBar([["r", 0, 4], ["Eb5", 4, 4], ["Ab4", 8, 4], ["G4", 12, 4]], [tc(PC.F, "m7")]),
+  teaBar([["Bb4", 0, 8], ["G4", 8, 8]], [tc(PC.Bb, "7")]),
+  teaBar([["Eb4", 0, 16]], [EB, tc(PC.C, "m7", 8)]),
+  teaBar([["Eb4", 0, 12], ["r", 12, 4]], [tc(PC.F, "m7"), tc(PC.Bb, "7", 8)]),
+];
+const S_WONDERFUL_FULL: Measure[] = [
+  ...SW_A_SHARED, ...SW_A1_END,
+  ...SW_A_SHARED, ...SW_A2_END,
+  ...SW_B,
+  ...SW_C,
 ];
 
 // ---- オリジナルのビバップ ii–V–I フレーズ ----
@@ -518,12 +513,12 @@ export const TEMPLATES: Template[] = [
     measures: bebop251(PC.Bb, -2),
   },
   {
-    id: "swonderful-a",
-    label: "'S Wonderful — Aセクション (Eb, Gershwin)",
+    id: "swonderful",
+    label: "'S Wonderful — full chorus (Eb, Gershwin)",
     root: PC.Eb,
     useFlats: true,
     timeSig: FOUR_FOUR,
-    measures: S_WONDERFUL_A,
+    measures: S_WONDERFUL_FULL,
   },
   {
     id: "rhythm-a",
