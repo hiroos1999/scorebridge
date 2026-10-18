@@ -244,50 +244,6 @@ const SUNNY_SIDE_BARS: BarSpec[] = [
   [{ root: PC.F, kind: "maj7" }],
 ];
 
-// 6. But Not for Me（George Gershwin, 1930）— G、
-//    唯一シャープ系のキーなのでuseFlats:falseで生成する。
-const BUT_NOT_FOR_ME_BARS: BarSpec[] = [
-  [{ root: PC.G, kind: "maj7" }],
-  [
-    { root: PC.B, kind: "m7" },
-    { root: PC.E, kind: "7" },
-  ],
-  [{ root: PC.A, kind: "m7" }],
-  [{ root: PC.D, kind: "7" }],
-  [{ root: PC.G, kind: "maj7" }],
-  [
-    { root: PC.B, kind: "m7" },
-    { root: PC.E, kind: "7" },
-  ],
-  [
-    { root: PC.A, kind: "m7" },
-    { root: PC.D, kind: "7" },
-  ],
-  [{ root: PC.G, kind: "maj7" }],
-];
-
-// ユーザーが目視で書き出した実際のメロディ（音名・音価）をnote()/rest()で変換。
-// 確信度がやや低い旨の申告あり（特に3・7小節目のG4半音符のあと、および
-// 4・8小節目末尾の無音区間の長さは、ユーザー自身も確証が薄いとのこと）。
-const BUT_NOT_FOR_ME_A_NOTES: Note[][] = [
-  // 1. G4(2分) F4(4分) F4(4分、スラー)
-  [note(0, 8, 10), note(8, 4, 11), note(12, 4, 11)],
-  // 2. F4(4分)×4
-  [note(0, 4, 11), note(4, 4, 11), note(8, 4, 11), note(12, 4, 11)],
-  // 3. G4(2分) + 残りは2分休符（確信度やや低い）
-  [note(0, 8, 10), rest(8, 8)],
-  // 4. 8分休符 F4(4分)×3 + 8分休符（確信度やや低い）
-  [rest(0, 2), note(2, 4, 11), note(6, 4, 11), note(10, 4, 11), rest(14, 2)],
-  // 5. 1小節目と同じ音型
-  [note(0, 8, 10), note(8, 4, 11), note(12, 4, 11)],
-  // 6. 2小節目と同じ音型
-  [note(0, 4, 11), note(4, 4, 11), note(8, 4, 11), note(12, 4, 11)],
-  // 7. 3小節目と同じ音型（確信度やや低い）
-  [note(0, 8, 10), rest(8, 8)],
-  // 8. 4小節目と同じ音型（確信度やや低い）
-  [rest(0, 2), note(2, 4, 11), note(6, 4, 11), note(10, 4, 11), rest(14, 2)],
-];
-
 // 7. I Can't Give You Anything But Love（Jimmy McHugh, 1928）— C、
 //    I-iidimを含むスウィング期らしい進行。
 const CANT_GIVE_YOU_BARS: BarSpec[] = [
@@ -445,6 +401,44 @@ const S_WONDERFUL_FULL: Measure[] = [
 // 音は [MIDI番号, 音価(グリッド数: 2=8分, 4=4分, 8=2分)] の並びで、
 // ビート頭にはコードトーン(3rd・7th・5th・9th)を置き、8分音符のラインと
 // 半音の経過音・囲み(エンクロージャー)で次のコードの3rdに解決する。
+// But Not for Me（Gershwin, 1930）フルコーラス Eb。楽譜画像から読み取り。
+const BNM_EBM7 = [tc(PC.Eb, "maj7")];
+const BNM_RUN = [["r", 0, 4], ["F4", 4, 4], ["G4", 8, 4], ["F4", 12, 4]] as TeaNote[];
+const BNM_PICKUP: Measure[] = [teaBar(BNM_RUN, [tc(PC.Bb, "7")])];
+const BNM_A: Measure[] = [
+  teaBar([["G4", 0, 8], ["F4", 8, 4], ["Eb4", 12, 4]], [tc(PC.F, "7")]),
+  teaBar([["Eb4", 0, 4], ["F4", 4, 4], ["G4", 8, 4], ["F4", 12, 4]], [tc(PC.F, "m7"), tc(PC.Bb, "7", 8)]),
+  teaBar([["G4", 0, 16]], BNM_EBM7),
+  teaBar(BNM_RUN, [tc(PC.G, "m7"), tc(PC.C, "7", 8)]),
+  teaBar([["G4", 0, 8], ["F4", 8, 4], ["Eb4", 12, 4]], [tc(PC.F, "7")]),
+  teaBar([["Eb4", 0, 4], ["F4", 4, 4], ["G4", 8, 4], ["F4", 12, 4]], [tc(PC.F, "m7"), tc(PC.Bb, "7", 8)]),
+  teaBar([["G4", 0, 16]], BNM_EBM7),
+  teaBar([["r", 0, 4], ["G4", 4, 4], ["Ab4", 8, 4], ["Bb4", 12, 4]], [tc(PC.Bb, "m7"), tc(PC.Eb, "7", 8)]),
+];
+const BNM_B_COMMON: Measure[] = [
+  teaBar([["B4", 0, 8], ["C5", 8, 4], ["Eb5", 12, 4]], [tc(PC.Ab, "maj7")]),
+  teaBar([["r", 0, 4], ["F4", 4, 4], ["G4", 8, 4], ["Ab4", 12, 4]], [tc(PC.Ab, "m7"), tc(PC.Db, "7", 8)]),
+];
+const BNM_B_1: Measure[] = [
+  teaBar([["A4", 0, 8], ["Bb4", 8, 4], ["Eb5", 12, 4]], BNM_EBM7),
+  teaBar([["r", 0, 4], ["Eb4", 4, 4], ["F4", 8, 4], ["G4", 12, 4]], BNM_EBM7),
+  teaBar([["G4", 0, 8], ["Ab4", 8, 4], ["Eb5", 12, 4]], [tc(PC.C, "m7")]),
+  teaBar([["r", 0, 4], ["Eb5", 4, 4], ["C5", 8, 4], ["Ab4", 12, 4]], [tc(PC.F, "7")]),
+  teaBar([["F4", 0, 16]], [tc(PC.F, "m7")]),
+  teaBar(BNM_RUN, [tc(PC.Bb, "7")]),
+];
+const BNM_C_2: Measure[] = [
+  teaBar([["A4", 0, 8], ["Bb4", 8, 4], ["F5", 12, 4]], BNM_EBM7),
+  teaBar([["r", 0, 4], ["Eb5", 4, 4], ["C5", 8, 4], ["Ab4", 12, 4]], [tc(PC.C, "m7")]),
+  teaBar([["G4", 0, 16]], [tc(PC.F, "m7")]),
+  teaBar([["F4", 0, 16]], [tc(PC.Bb, "7")]),
+  teaBar([["Eb4", 0, 16]], [tc(PC.Eb, "6")]),
+  teaBar([["Eb4", 0, 12], ["r", 12, 4]], [tc(PC.Eb, "6")]),
+];
+const BUT_NOT_FOR_ME_FULL: Measure[] = [
+  ...BNM_PICKUP, ...BNM_A, ...BNM_B_COMMON, ...BNM_B_1, ...BNM_A, ...BNM_B_COMMON, ...BNM_C_2,
+];
+
 const ROW_MIDI = [84, 83, 81, 79, 77, 76, 74, 72, 71, 69, 67, 65, 64, 62, 60, 59, 57, 55, 53, 52];
 function midiToNote(startGrid: number, duration: number, midi: number): Note {
   let rowIdx = ROW_MIDI.indexOf(midi);
@@ -561,12 +555,12 @@ export const TEMPLATES: Template[] = [
     measures: buildStandardA(SUNNY_SIDE_BARS, true, START_ROW),
   },
   {
-    id: "but-not-for-me-a",
-    label: "But Not for Me — Aセクション (G, Gershwin)",
-    root: PC.G,
-    useFlats: false,
+    id: "but-not-for-me",
+    label: "But Not for Me — full chorus (Eb, Gershwin)",
+    root: PC.Eb,
+    useFlats: true,
     timeSig: FOUR_FOUR,
-    measures: withNotes(buildStandardA(BUT_NOT_FOR_ME_BARS, false, START_ROW), BUT_NOT_FOR_ME_A_NOTES),
+    measures: BUT_NOT_FOR_ME_FULL,
   },
   {
     id: "cant-give-you-a",
