@@ -13,4 +13,5 @@ export const CHORD_TYPES: Record<string, number[]> = {
   m7b5: [0, 3, 6, 10],
   "6": [0, 4, 7, 9],
   m6: [0, 3, 7, 9],
+  mMaj7: [0, 3, 7, 11],
 };

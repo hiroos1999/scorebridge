@@ -315,6 +315,7 @@ const CHORD_TYPE_LABELS: Record<string, string> = {
   "7": "7",
   dim: "dim",
   m7b5: "m7♭5",
+  mMaj7: "m(maj7)",
 };
 // 転回形のラベル（インデックス=ベースになる構成音の順位。0=ルート）。
 // 3和音なら第2転回形まで、4和音（7thコード）なら第3転回形まで存在する。

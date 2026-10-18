@@ -371,75 +371,77 @@ const BLACKBIRD_BARS: BarSpec[] = [
   [{ root: PC.F, kind: "maj7" }],
 ];
 
-// 9. Tea for Two（Vincent Youmans, 1924 / パブリックドメイン）— Abのキー、Aセクション8小節。
-//    メロディは原典の楽譜の画像を拡大して、音の高さと長さを1音ずつ読み取って入力したもの
-//    （7・8小節目は1番かっこ）。コードは一般的な進行（Bbm7-Eb7-Abmaj7-Db7…）。
-//    rows: Ab4=A4段(9)+♭, F4=11, G4=10, Eb4=E4段(12)+♭, C5=7
-const TEA_FOR_TWO_A: Measure[] = [
-  // 1. Ab(付点4分) F(8分) G(付点4分) F(8分)
-  {
-    notes: [note(0, 6, 9, -1), note(6, 2, 11), note(8, 6, 10), note(14, 2, 11)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.Bb, kind: "m7", inversion: 0 },
-      { offsetGrid: 8, root: PC.Eb, kind: "7", inversion: 0 },
-    ],
-  },
-  // 2. Ab(4分) F(8分) G(8分、次のGにタイ) G(付点4分) Eb(8分)
-  {
-    notes: [note(0, 4, 9, -1), note(4, 2, 11), note(6, 2, 10), note(8, 6, 10), note(14, 2, 12, -1)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.Bb, kind: "m7", inversion: 0 },
-      { offsetGrid: 8, root: PC.Eb, kind: "7", inversion: 0 },
-    ],
-  },
-  // 3. G(付点4分) Eb(8分) F(付点4分) Eb(8分)
-  {
-    notes: [note(0, 6, 10), note(6, 2, 12, -1), note(8, 6, 11), note(14, 2, 12, -1)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.Ab, kind: "maj7", inversion: 0 },
-      { offsetGrid: 8, root: PC.Db, kind: "7", inversion: 0 },
-    ],
-  },
-  // 4. G(4分) Eb(8分) F(8分) F(付点4分、前のFにタイ) F(8分)
-  {
-    notes: [note(0, 4, 10), note(4, 2, 12, -1), note(6, 2, 11), note(8, 6, 11), note(14, 2, 11)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.C, kind: "m7", inversion: 0 },
-      { offsetGrid: 8, root: PC.B, kind: "dim", inversion: 0 },
-    ],
-  },
-  // 5. 1小節目と同じ音型
-  {
-    notes: [note(0, 6, 9, -1), note(6, 2, 11), note(8, 6, 10), note(14, 2, 11)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.Bb, kind: "m7", inversion: 0 },
-      { offsetGrid: 8, root: PC.Eb, kind: "7", inversion: 0 },
-    ],
-  },
-  // 6. Ab(付点4分) F(8分) G(4分) Eb(4分)
-  {
-    notes: [note(0, 6, 9, -1), note(6, 2, 11), note(8, 4, 10), note(12, 4, 12, -1)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.Bb, kind: "m7", inversion: 0 },
-      { offsetGrid: 8, root: PC.Eb, kind: "7", inversion: 0 },
-    ],
-  },
-  // 7. (1番かっこ) C(全音符、次の小節へタイ)
-  {
-    notes: [note(0, 16, 7)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.Ab, kind: "maj7", inversion: 0 },
-      { offsetGrid: 8, root: PC.Bb, kind: "m7", inversion: 0 },
-    ],
-  },
-  // 8. C(4分、前の小節からタイ) 4分休符 2分休符
-  {
-    notes: [note(0, 4, 7), rest(4, 4), rest(8, 8)],
-    harmonies: [
-      { offsetGrid: 0, root: PC.C, kind: "m7", inversion: 0 },
-      { offsetGrid: 8, root: PC.Db, kind: "maj7", inversion: 0 },
-    ],
-  },
+// 9. Tea for Two（Vincent Youmans, 1924 / パブリックドメイン）— Abのキー、フルコーラス32小節。
+//    メロディは原典の楽譜の画像を拡大して、音の高さと長さを1音ずつ読み取って入力したもの。
+//    形式: A(8, 1番かっこ) → B(8) → A(8, 2番かっこ) → C(8)。
+//    コードは一般的な進行（Bbm7-Eb7-Abmaj7-Db7 …）。
+type TeaChord = { root: number; kind: string; at: number };
+const TEA_PITCH: Record<string, [number, number]> = {
+  Eb4: [12, -1], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
+  C5: [7, 0], Db5: [6, -1], Eb5: [5, -1], E5: [5, 0], F5: [4, 0],
+};
+// [音名または"r"(休符), 開始グリッド, 長さ(グリッド数。4=4分, 2=8分, 6=付点4分)]
+type TeaNote = [string, number, number];
+function teaBar(notes: TeaNote[], chords: TeaChord[]): Measure {
+  return {
+    notes: notes.map(([name, g, d]) => {
+      if (name === "r") return rest(g, d);
+      const [row, acc] = TEA_PITCH[name];
+      return note(g, d, row, acc);
+    }),
+    harmonies: chords.map((c) => ({ offsetGrid: c.at, root: c.root, kind: c.kind, inversion: 0 })),
+  };
+}
+const tc = (root: number, kind: string, at = 0): TeaChord => ({ root, kind, at });
+const BBM7_EB7 = [tc(PC.Bb, "m7"), tc(PC.Eb, "7", 8)];
+const DM7_G7 = [tc(PC.D, "m7"), tc(PC.G, "7", 8)];
+
+// A: 1〜6小節（共通）
+const TEA_A_COMMON: Measure[] = [
+  teaBar([["Ab4", 0, 6], ["F4", 6, 2], ["G4", 8, 6], ["F4", 14, 2]], BBM7_EB7),
+  teaBar([["Ab4", 0, 4], ["F4", 4, 2], ["G4", 6, 2], ["G4", 8, 6], ["Eb4", 14, 2]], BBM7_EB7),
+  teaBar([["G4", 0, 6], ["Eb4", 6, 2], ["F4", 8, 6], ["Eb4", 14, 2]], [tc(PC.Ab, "maj7"), tc(PC.Db, "7", 8)]),
+  teaBar([["G4", 0, 4], ["Eb4", 4, 2], ["F4", 6, 2], ["F4", 8, 6], ["F4", 14, 2]], [tc(PC.C, "m7"), tc(PC.B, "dim", 8)]),
+  teaBar([["Ab4", 0, 6], ["F4", 6, 2], ["G4", 8, 6], ["F4", 14, 2]], BBM7_EB7),
+  teaBar([["Ab4", 0, 6], ["F4", 6, 2], ["G4", 8, 4], ["Eb4", 12, 4]], BBM7_EB7),
+];
+// A 1番かっこ（Bへ）
+const TEA_A_END1: Measure[] = [
+  teaBar([["C5", 0, 16]], [tc(PC.Ab, "maj7"), tc(PC.Bb, "m7", 8)]),
+  teaBar([["C5", 0, 4], ["r", 4, 4], ["r", 8, 8]], [tc(PC.C, "m7"), tc(PC.Db, "maj7", 8)]),
+];
+// A 2番かっこ（Cへ）
+const TEA_A_END2: Measure[] = [
+  teaBar([["Eb5", 0, 16]], [tc(PC.C, "m7b5")]),
+  teaBar([["Eb5", 0, 16]], [tc(PC.F, "7")]),
+];
+// B（キーはC。4フラットの調号に対してナチュラルを付けて書かれている）
+const TEA_B: Measure[] = [
+  teaBar([["C5", 0, 4], ["C5", 4, 2], ["A4", 6, 2], ["B4", 8, 4], ["B4", 12, 2], ["A4", 14, 2]], DM7_G7),
+  teaBar([["C5", 0, 4], ["C5", 4, 2], ["A4", 6, 2], ["B4", 8, 4], ["r", 12, 2], ["G4", 14, 2]], DM7_G7),
+  teaBar([["B4", 0, 4], ["B4", 4, 2], ["G4", 6, 2], ["A4", 8, 4], ["A4", 12, 2], ["G4", 14, 2]], [tc(PC.C, "maj7"), tc(PC.D, "m7", 8)]),
+  teaBar([["B4", 0, 4], ["B4", 4, 2], ["G4", 6, 2], ["A4", 8, 4], ["r", 12, 2], ["A4", 14, 2]], [tc(PC.E, "m7"), tc(PC.Eb, "dim", 8)]),
+  teaBar([["C5", 0, 4], ["C5", 4, 2], ["A4", 6, 2], ["B4", 8, 4], ["B4", 12, 2], ["A4", 14, 2]], DM7_G7),
+  teaBar([["C5", 0, 4], ["C5", 4, 2], ["A4", 6, 2], ["B4", 8, 4], ["G4", 12, 4]], DM7_G7),
+  teaBar([["E5", 0, 16]], [tc(PC.C, "maj7")]),
+  teaBar([["Eb5", 0, 8], ["r", 8, 8]], BBM7_EB7),
+];
+// C（Abに戻る8小節）
+const TEA_C: Measure[] = [
+  teaBar([["F5", 0, 6], ["F5", 6, 2], ["Eb5", 8, 6], ["Eb5", 14, 2]], [tc(PC.Bb, "m7"), tc(PC.F, "7", 8)]),
+  teaBar([["Db5", 0, 6], ["Db5", 6, 2], ["C5", 8, 6], ["C5", 14, 2]], [tc(PC.Gb, "7"), tc(PC.F, "7", 8)]),
+  teaBar([["Eb5", 0, 6], ["Eb5", 6, 2], ["Db5", 8, 6], ["Db5", 14, 2]], [tc(PC.A, "dim"), tc(PC.Bb, "m7", 8)]),
+  teaBar([["C5", 0, 4], ["C5", 4, 2], ["Bb4", 6, 2], ["Bb4", 8, 8]], [tc(PC.Db, "mMaj7"), tc(PC.Gb, "7", 8)]),
+  teaBar([["Ab4", 0, 6], ["F4", 6, 2], ["G4", 8, 6], ["F4", 14, 2]], [tc(PC.Ab, "maj7"), tc(PC.B, "dim", 8)]),
+  teaBar([["Ab4", 0, 6], ["F4", 6, 2], ["G4", 8, 4], ["C5", 12, 4]], BBM7_EB7),
+  teaBar([["Ab4", 0, 16]], [tc(PC.Ab, "maj7")]),
+  teaBar([["Ab4", 0, 16]], [tc(PC.C, "m7b5"), tc(PC.F, "7", 8)]),
+];
+const TEA_FOR_TWO_FULL: Measure[] = [
+  ...TEA_A_COMMON, ...TEA_A_END1,
+  ...TEA_B,
+  ...TEA_A_COMMON, ...TEA_A_END2,
+  ...TEA_C,
 ];
 
 // ---- オリジナルのビバップ ii–V–I フレーズ ----
@@ -588,11 +590,11 @@ export const TEMPLATES: Template[] = [
     measures: buildStandardA(BLACKBIRD_BARS, true, START_ROW),
   },
   {
-    id: "tea-for-two-a",
-    label: "Tea for Two — A section (Ab, Youmans)",
+    id: "tea-for-two",
+    label: "Tea for Two — full chorus (Ab, Youmans)",
     root: PC.Ab,
     useFlats: true,
     timeSig: FOUR_FOUR,
-    measures: TEA_FOR_TWO_A,
+    measures: TEA_FOR_TWO_FULL,
   },
 ];
