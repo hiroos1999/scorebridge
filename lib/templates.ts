@@ -27,13 +27,6 @@ function rest(startGrid: number, duration: number): Note {
   return { startGrid, duration, isRest: true, rowIdxList: [], accidentals: {} };
 }
 
-// harmoniesはbuildStandardAの生成結果をそのまま流用し、notesだけを実採譜データに
-// 差し替えるためのヘルパー（4曲: 'S Wonderful/I Got Rhythm/But Not for Me/
-// Tea for Twoのharmoniesを一切変更しないため）。
-function withNotes(measures: Measure[], notesByMeasure: Note[][]): Measure[] {
-  return measures.map((m, i) => ({ notes: notesByMeasure[i], harmonies: m.harmonies }));
-}
-
 // ピッチクラス（NOTE_NAMES_FLAT/SHARPと同じ並び: C=0, Db/C#=1, D=2, Eb/D#=3,
 // E=4, F=5, Gb/F#=6, G=7, Ab/G#=8, A=9, Bb/A#=10, B=11）。
 const PC = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
@@ -150,42 +143,6 @@ const FOUR_FOUR: TimeSignature = { numerator: 4, denominator: 4 };
 // 書き出した実際のメロディに基づき、withNotes()でnotesだけを差し替えている
 // （harmoniesはbuildStandardAの生成結果のまま）。
 
-// 1. I Got Rhythm（George Gershwin, 1930 / パブリックドメイン）— Bb、
-//    いわゆる「リズムチェンジ」の典型的なI-VI7-ii-V7循環。
-const RHYTHM_BARS: BarSpec[] = [
-  [{ root: PC.Bb, kind: "maj7" }],
-  [{ root: PC.G, kind: "7" }],
-  [{ root: PC.C, kind: "m7" }],
-  [{ root: PC.F, kind: "7" }],
-  [{ root: PC.Bb, kind: "maj7" }],
-  [{ root: PC.G, kind: "7" }],
-  [
-    { root: PC.C, kind: "m7" },
-    { root: PC.F, kind: "7" },
-  ],
-  [{ root: PC.Bb, kind: "maj7" }],
-];
-
-// ユーザーが目視で書き出した実際のメロディ（音名・音価）をnote()/rest()で変換。
-const RHYTHM_A_NOTES: Note[][] = [
-  // 1. 8分休符 C5(4分) D5(4分) + 残りは無音のまま推測せず休符で埋める(付点4分休符)
-  [rest(0, 2), note(2, 4, 7), note(6, 4, 6), rest(10, 6)],
-  // 2. Eb5(付点4分) D5(8分) C5(2分、タイ)
-  [note(0, 6, 5, -1), note(6, 2, 6), note(8, 8, 7)],
-  // 3. 8分休符 D5(4分) F5(4分) + 付点4分休符
-  [rest(0, 2), note(2, 4, 6), note(6, 4, 4), rest(10, 6)],
-  // 4. Eb5(付点4分) D5(8分、スラー) C5(2分)
-  [note(0, 6, 5, -1), note(6, 2, 6), note(8, 8, 7)],
-  // 5. 8分休符 D5(4分) F5(4分) + 付点4分休符
-  [rest(0, 2), note(2, 4, 6), note(6, 4, 4), rest(10, 6)],
-  // 6. Eb5(付点4分) F5(8分) 8分休符 F5(8分) + 4分休符（8分休符+残り8分を統合）
-  [note(0, 6, 4), note(6, 2, 4), rest(8, 2), note(10, 2, 4), rest(12, 4)],
-  // 7. G5(4分) F5(8分) Eb5(8分) D5(8分) C5(8分、スラー) + 4分休符
-  [note(0, 4, 3), note(4, 2, 4), note(6, 2, 5, -1), note(8, 2, 6), note(10, 2, 7), rest(12, 4)],
-  // 8. Bb4(全音符)
-  [note(0, 16, 8, -1)],
-];
-
 // 2. Body and Soul（Johnny Green, 1930）— Db、ii-V-Iを軸にした進行。
 const BODY_AND_SOUL_BARS: BarSpec[] = [
   [{ root: PC.Eb, kind: "m7" }],
@@ -279,7 +236,7 @@ const BLACKBIRD_BARS: BarSpec[] = [
 //    メロディは原典の楽譜の画像を拡大して、音の高さと長さを1音ずつ読み取って入力したもの。
 //    形式: A(8, 1番かっこ) → B(8) → A(8, 2番かっこ) → C(8)。
 //    コードは一般的な進行（Bbm7-Eb7-Abmaj7-Db7 …）。
-type TeaChord = { root: number; kind: string; at: number };
+type TeaChord = { root: number; kind: string; at: number; inv?: number };
 const TEA_PITCH: Record<string, [number, number]> = {
   Eb4: [12, -1], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
   C5: [7, 0], Cb5: [7, -1], D5: [6, 0], Db5: [6, -1], Eb5: [5, -1], E5: [5, 0], F5: [4, 0],
@@ -293,10 +250,10 @@ function teaBar(notes: TeaNote[], chords: TeaChord[]): Measure {
       const [row, acc] = TEA_PITCH[name];
       return note(g, d, row, acc);
     }),
-    harmonies: chords.map((c) => ({ offsetGrid: c.at, root: c.root, kind: c.kind, inversion: 0 })),
+    harmonies: chords.map((c) => ({ offsetGrid: c.at, root: c.root, kind: c.kind, inversion: c.inv ?? 0 })),
   };
 }
-const tc = (root: number, kind: string, at = 0): TeaChord => ({ root, kind, at });
+const tc = (root: number, kind: string, at = 0, inv = 0): TeaChord => ({ root, kind, at, inv });
 const BBM7_EB7 = [tc(PC.Bb, "m7"), tc(PC.Eb, "7", 8)];
 const DM7_G7 = [tc(PC.D, "m7"), tc(PC.G, "7", 8)];
 
@@ -439,6 +396,39 @@ const BUT_NOT_FOR_ME_FULL: Measure[] = [
   ...BNM_PICKUP, ...BNM_A, ...BNM_B_COMMON, ...BNM_B_1, ...BNM_A, ...BNM_B_COMMON, ...BNM_C_2,
 ];
 
+// I Got Rhythm（Gershwin, 1930）フルコーラス Bb。楽譜画像から読み取り。
+// 形式: A（8）+ A（8）+ B（8）+ 最後のA（8＋2小節のタグ）= 34小節。
+const RH_A: Measure[] = [
+  teaBar([["r", 0, 4], ["F4", 4, 8], ["G4", 12, 4]], [tc(PC.Bb, "maj7"), tc(PC.G, "m7", 8)]),
+  teaBar([["Bb4", 0, 6], ["C5", 6, 10]], [tc(PC.C, "m7"), tc(PC.F, "7", 8)]),
+  teaBar([["r", 0, 4], ["C5", 4, 8], ["Bb4", 12, 4]], [tc(PC.D, "m7"), tc(PC.G, "m7", 8)]),
+  teaBar([["G4", 0, 6], ["F4", 6, 10]], [tc(PC.C, "m7"), tc(PC.F, "7", 8)]),
+  teaBar([["r", 0, 4], ["F4", 4, 8], ["G4", 12, 4]], [tc(PC.Bb, "maj7"), tc(PC.Bb, "7", 8, 1)]),
+  teaBar([["Bb4", 0, 6], ["C5", 6, 2], ["r", 8, 2], ["Eb5", 10, 2], ["r", 12, 2], ["C5", 14, 2]], [tc(PC.Eb, "6"), tc(PC.E, "dim", 8)]),
+];
+const RH_A_END: Measure[] = [
+  teaBar([["D5", 0, 4], ["D5", 4, 4], ["C5", 8, 2], ["D5", 10, 2], ["C5", 12, 2], ["Bb4", 14, 2]],
+    [tc(PC.D, "m7"), tc(PC.G, "7", 4), tc(PC.C, "m7", 8), tc(PC.F, "7", 12)]),
+  teaBar([["Bb4", 0, 16]], [tc(PC.Bb, "maj7")]),
+];
+const RH_B: Measure[] = [
+  teaBar([["r", 0, 4], ["D5", 4, 6], ["D5", 10, 6]], [tc(PC.A, "m7")]),
+  teaBar([["D5", 0, 6], ["E5", 6, 10]], [tc(PC.D, "7")]),
+  teaBar([["r", 0, 4], ["D5", 4, 6], ["D5", 10, 6]], [tc(PC.D, "m7")]),
+  teaBar([["D5", 0, 6], ["G4", 6, 10]], [tc(PC.G, "7")]),
+  teaBar([["r", 0, 4], ["C5", 4, 6], ["C5", 10, 6]], [tc(PC.G, "m7")]),
+  teaBar([["C5", 0, 6], ["D5", 6, 10]], [tc(PC.C, "7")]),
+  teaBar([["r", 0, 4], ["C5", 4, 6], ["C5", 10, 6]], [tc(PC.C, "m7")]),
+  teaBar([["C5", 0, 12], ["r", 12, 4]], [tc(PC.F, "7")]),
+];
+const RH_C_END: Measure[] = [
+  teaBar([["D5", 0, 4], ["D5", 4, 4], ["C5", 8, 2], ["D5", 10, 2], ["Eb5", 12, 2], ["F5", 14, 2]], [tc(PC.D, "m7")]),
+  teaBar([["F5", 0, 8], ["r", 8, 2], ["Eb5", 10, 2], ["r", 12, 2], ["C5", 14, 2]], [tc(PC.G, "7")]),
+];
+const I_GOT_RHYTHM_FULL: Measure[] = [
+  ...RH_A, ...RH_A_END, ...RH_A, ...RH_A_END, ...RH_B, ...RH_A, ...RH_C_END, ...RH_A_END,
+];
+
 const ROW_MIDI = [84, 83, 81, 79, 77, 76, 74, 72, 71, 69, 67, 65, 64, 62, 60, 59, 57, 55, 53, 52];
 function midiToNote(startGrid: number, duration: number, midi: number): Note {
   let rowIdx = ROW_MIDI.indexOf(midi);
@@ -515,12 +505,12 @@ export const TEMPLATES: Template[] = [
     measures: S_WONDERFUL_FULL,
   },
   {
-    id: "rhythm-a",
-    label: "I Got Rhythm — Aセクション (Bb, Gershwin)",
+    id: "rhythm",
+    label: "I Got Rhythm — full chorus (Bb, Gershwin)",
     root: PC.Bb,
     useFlats: true,
     timeSig: FOUR_FOUR,
-    measures: withNotes(buildStandardA(RHYTHM_BARS, true, START_ROW), RHYTHM_A_NOTES),
+    measures: I_GOT_RHYTHM_FULL,
   },
   {
     id: "body-and-soul-a",
