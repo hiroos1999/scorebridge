@@ -238,7 +238,7 @@ const BLACKBIRD_BARS: BarSpec[] = [
 //    コードは一般的な進行（Bbm7-Eb7-Abmaj7-Db7 …）。
 type TeaChord = { root: number; kind: string; at: number; inv?: number };
 const TEA_PITCH: Record<string, [number, number]> = {
-  Eb4: [12, -1], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
+  Eb4: [12, -1], E4: [12, 0], F4: [11, 0], G4: [10, 0], Ab4: [9, -1], A4: [9, 0], Bb4: [8, -1], B4: [8, 0],
   C5: [7, 0], Cb5: [7, -1], D5: [6, 0], Db5: [6, -1], Eb5: [5, -1], E5: [5, 0], F5: [4, 0],
 };
 // [音名または"r"(休符), 開始グリッド, 長さ(グリッド数。4=4分, 2=8分, 6=付点4分)]
@@ -429,6 +429,32 @@ const I_GOT_RHYTHM_FULL: Measure[] = [
   ...RH_A, ...RH_A_END, ...RH_A, ...RH_A_END, ...RH_B, ...RH_A, ...RH_C_END, ...RH_A_END,
 ];
 
+// Summertime（Gershwin, 1935 / Porgy and Bess）フルコーラス Am。楽譜画像から読み取り。
+// 形式: 頭の1小節（アウフタクト）+ 16小節。
+const SU_AM = [tc(PC.A, "m7")];
+const SU_B5E7 = [tc(PC.B, "m7b5"), tc(PC.E, "7", 8)];
+const SU_BAR2 = (): Measure =>
+  teaBar([["E5", 0, 4], ["D5", 4, 2], ["C5", 6, 2], ["D5", 8, 2], ["E5", 10, 2], ["C5", 12, 4]], SU_B5E7);
+const SUMMERTIME_FULL: Measure[] = [
+  teaBar([["r", 0, 8], ["E5", 8, 4], ["C5", 12, 4]], SU_AM),
+  teaBar([["E5", 0, 16]], SU_AM),
+  SU_BAR2(),
+  teaBar([["A4", 0, 8], ["E4", 8, 8]], SU_AM),
+  teaBar([["E4", 0, 8], ["E5", 8, 4], ["C5", 12, 4]], SU_AM),
+  teaBar([["D5", 0, 2], ["D5", 2, 6], ["D5", 8, 8]], [tc(PC.D, "m7"), tc(PC.G, "7", 8)]),
+  teaBar([["D5", 0, 4], ["C5", 4, 2], ["A4", 6, 2], ["C5", 8, 2], ["A4", 10, 2], ["C5", 12, 4]], [tc(PC.C, "m7"), tc(PC.F, "7", 8)]),
+  teaBar([["B4", 0, 16]], [tc(PC.B, "m7b5")]),
+  teaBar([["B4", 0, 8], ["r", 8, 2], ["E5", 10, 4], ["C5", 14, 2]], [tc(PC.E, "7")]),
+  teaBar([["E5", 0, 2], ["E5", 2, 4], ["E5", 6, 10]], SU_AM),
+  SU_BAR2(),
+  teaBar([["A4", 0, 8], ["E4", 8, 8]], SU_AM),
+  teaBar([["E4", 0, 12], ["E4", 12, 4]], [tc(PC.D, "m7"), tc(PC.G, "7", 8)]),
+  teaBar([["G4", 0, 4], ["E4", 4, 2], ["G4", 6, 2], ["A4", 8, 4], ["C5", 12, 4]], [tc(PC.C, "maj7"), tc(PC.F, "maj7", 8)]),
+  teaBar([["E5", 0, 2], ["D5", 2, 6], ["C5", 8, 8]], SU_B5E7),
+  teaBar([["A4", 0, 16]], SU_AM),
+  teaBar([["A4", 0, 8], ["r", 8, 8]], SU_B5E7),
+];
+
 const ROW_MIDI = [84, 83, 81, 79, 77, 76, 74, 72, 71, 69, 67, 65, 64, 62, 60, 59, 57, 55, 53, 52];
 function midiToNote(startGrid: number, duration: number, midi: number): Note {
   let rowIdx = ROW_MIDI.indexOf(midi);
@@ -495,6 +521,14 @@ export const TEMPLATES: Template[] = [
     useFlats: true,
     timeSig: FOUR_FOUR,
     measures: bebop251(PC.Bb, -2),
+  },
+  {
+    id: "summertime",
+    label: "Summertime — full chorus (Am, Gershwin)",
+    root: PC.C,
+    useFlats: false,
+    timeSig: FOUR_FOUR,
+    measures: SUMMERTIME_FULL,
   },
   {
     id: "swonderful",
