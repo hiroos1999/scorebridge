@@ -679,17 +679,17 @@ export default function StaffToFretboard({
   }, []);
   // 五線譜の表示領域の幅。画面が広いときは、表示中の小節の右側に後続の小節も並べて表示する。
   const staffWrapRef = useRef<HTMLDivElement>(null);
-  const [staffWrapWidth, setStaffWrapWidth] = useState(0);
-  const [viewStart, setViewStart] = useState(0);
+  // 入力・再生中の小節が変わったら、その小節が見える位置まで横スクロールする。
+  // （1小節目は先頭=ト音記号の位置まで戻す）
   useEffect(() => {
     const el = staffWrapRef.current;
     if (!el) return;
-    const update = () => setStaffWrapWidth(el.clientWidth);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    const scale = STAFF_RENDER_HEIGHT_PX / STAFF_VB_H;
+    const slotLeftPx = (LEFT_FIXED + currentMeasureIndex * (NOTE_AREA_WIDTH + PREVIEW_GAP_PX)) * scale;
+    const target = currentMeasureIndex === 0 ? 0 : Math.max(0, slotLeftPx - 70 * scale);
+    const visible = el.scrollLeft <= slotLeftPx - 20 && slotLeftPx + NOTE_AREA_WIDTH * scale <= el.scrollLeft + el.clientWidth;
+    if (!visible) el.scrollTo({ left: target, behavior: "smooth" });
+  }, [currentMeasureIndex, measures.length]);
   const [isPlaying, setIsPlaying] = useState(false);
   // ローカルなstartGridは小節をまたいで一意ではないため、どの小節の音符かも保持する。
   const [playingNoteKey, setPlayingNoteKey] = useState<{ measureIndex: number; startGrid: number } | null>(null);
@@ -1072,21 +1072,11 @@ export default function StaffToFretboard({
   // スロットに居るか(activeSlot)に応じて、x座標の原点(originX)がずれる。
   // スロットsの音符エリアは LEFT + s*MEASURE_UNIT_W から始まる（先頭スロットだけ調号・拍子記号の右）。
   const MEASURE_UNIT_W = NOTE_AREA_WIDTH + PREVIEW_GAP_PX;
-  const staffScale = STAFF_RENDER_HEIGHT_PX / STAFF_VB_H;
-  const availableVbWidth = staffWrapWidth / staffScale;
   const firstBarlineX = LEFT + NOTE_AREA_WIDTH;
-  const roomAfterFirstBarline = availableVbWidth - firstBarlineX - NOTE_AREA_MARGIN_RIGHT;
-  // 余白に1拍分のプレビュー以上の幅があるときだけ複数小節表示にする（最後の小節は端で切れてよい）。
-  const multiMeasureMode = roomAfterFirstBarline >= PREVIEW_GAP_PX + PREVIEW_WIDTH_PX;
-  const windowSize = multiMeasureMode
-    ? Math.min(measures.length, 1 + Math.ceil(roomAfterFirstBarline / MEASURE_UNIT_W))
-    : 1;
-  const maxViewStart = Math.max(0, measures.length - windowSize);
-  let windowStart = Math.min(viewStart, maxViewStart);
-  if (currentMeasureIndex < windowStart) windowStart = currentMeasureIndex;
-  else if (currentMeasureIndex > windowStart + windowSize - 1) windowStart = Math.min(currentMeasureIndex, maxViewStart);
-  // 表示範囲は、入力中の小節が範囲外に出たときだけページ送りする（描画中に保存し直すのはReact推奨の書き方）。
-  if (windowStart !== viewStart) setViewStart(windowStart);
+  // 全小節を横一列に並べ、はみ出した分は #staff-wrap の横スクロールで見る。
+  // 入力中の小節(currentMeasureIndex)が変わったら、下のeffectでその小節までスクロールする。
+  const windowSize = measures.length;
+  const windowStart = 0;
   const activeSlot = currentMeasureIndex - windowStart;
   const originX = LEFT + activeSlot * MEASURE_UNIT_W;
   const xForGrid = (g: number) => originX + g * GRID_UNIT_WIDTH;
@@ -1096,16 +1086,10 @@ export default function StaffToFretboard({
   // 最後の小節まで表示できていて、右にまだ余白があるときは、「小節を追加」の枠を置く。
   // 枠をクリックすると末尾に小節が増え、そのまま入力できる。
   const lastSlotEndX = firstBarlineX + (windowSize - 1) * MEASURE_UNIT_W;
-  const ghostRoom = roomAfterFirstBarline - (windowSize - 1) * MEASURE_UNIT_W;
-  const ghostShown = multiMeasureMode && windowStart + windowSize >= measures.length && ghostRoom >= 160;
-  const ghostWidth = ghostShown ? Math.min(MEASURE_UNIT_W, ghostRoom) : 0;
-  const STAFF_VB_W = multiMeasureMode
-    ? firstBarlineX +
-      (ghostShown
-        ? (windowSize - 1) * MEASURE_UNIT_W + ghostWidth
-        : Math.min((windowSize - 1) * MEASURE_UNIT_W, roomAfterFirstBarline)) +
-      NOTE_AREA_MARGIN_RIGHT
-    : firstBarlineX + PREVIEW_GAP_PX + PREVIEW_WIDTH_PX + NOTE_AREA_MARGIN_RIGHT;
+  // 末尾には常に「小節を追加」の枠を置く（クリックで末尾に小節が増える）。
+  const ghostShown = true;
+  const ghostWidth = MEASURE_UNIT_W;
+  const STAFF_VB_W = lastSlotEndX + ghostWidth + NOTE_AREA_MARGIN_RIGHT;
   // クリックしたx座標がどのスロットか（先頭スロットの小節線より右は、以降のスロットを等間隔で割る）。
   const slotForX = (x: number) =>
     x <= firstBarlineX ? 0 : Math.min(windowSize - 1, Math.floor((x - firstBarlineX) / MEASURE_UNIT_W) + 1);
