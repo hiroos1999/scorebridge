@@ -416,7 +416,79 @@ const TEA_FOR_TWO_A_NOTES: Note[][] = [
   [note(0, 4, 7), rest(4, 2), rest(6, 8), rest(14, 2)],
 ];
 
+// ---- オリジナルのビバップ ii–V–I フレーズ ----
+// Cのキーで書いた1つのフレーズを、キーごとに半音数だけ平行移動して作る
+// （F・Bbは、ギターで12フレット以内に収まるよう下方向に移す）。
+// 音は [MIDI番号, 音価(グリッド数: 2=8分, 4=4分, 8=2分)] の並びで、
+// ビート頭にはコードトーン(3rd・7th・5th・9th)を置き、8分音符のラインと
+// 半音の経過音・囲み(エンクロージャー)で次のコードの3rdに解決する。
+const ROW_MIDI = [84, 83, 81, 79, 77, 76, 74, 72, 71, 69, 67, 65, 64, 62, 60, 59, 57, 55, 53, 52];
+function midiToNote(startGrid: number, duration: number, midi: number): Note {
+  let rowIdx = ROW_MIDI.indexOf(midi);
+  if (rowIdx >= 0) return note(startGrid, duration, rowIdx);
+  // 黒鍵はフラットで綴る（半音上の自然音の段 + accidental -1）
+  rowIdx = ROW_MIDI.indexOf(midi + 1);
+  if (rowIdx < 0) throw new Error(`midiToNote: MIDI ${midi} is out of range`);
+  return note(startGrid, duration, rowIdx, -1);
+}
+function phraseMeasure(
+  line: [number, number][],
+  shift: number,
+  chord: { root: number; kind: string },
+): Measure {
+  const notes: Note[] = [];
+  let g = 0;
+  for (const [midi, dur] of line) {
+    notes.push(midiToNote(g, dur, midi + shift));
+    g += dur;
+  }
+  return { notes, harmonies: [{ offsetGrid: 0, root: chord.root, kind: chord.kind, inversion: 0 }] };
+}
+// Dm7 | G7 | Cmaj7（Cのキー）
+const BEBOP_251_C: [number, number][][] = [
+  // Dm7: Dm7のアルペジオで上がり、9th(E)から下がって7th(C)で止める
+  [[62, 2], [65, 2], [69, 2], [72, 2], [76, 2], [74, 2], [72, 4]],
+  // G7: 3rd(B)始まり。9th(A)を経てD→B→G、7th(F)から半音下(Eb)へ。次のEを下から囲む
+  [[71, 2], [74, 2], [76, 2], [74, 2], [71, 2], [67, 2], [65, 2], [63, 2]],
+  // Cmaj7: 3rd(E)に解決し、G・B・Dと上がって、ルート(C)を2分音符で伸ばす
+  [[64, 2], [67, 2], [71, 2], [74, 2], [72, 8]],
+];
+function bebop251(key: number, shift: number): Measure[] {
+  const ii = { root: (key + 2) % 12, kind: "m7" };
+  const V = { root: (key + 7) % 12, kind: "7" };
+  const I = { root: key, kind: "maj7" };
+  return [
+    phraseMeasure(BEBOP_251_C[0], shift, ii),
+    phraseMeasure(BEBOP_251_C[1], shift, V),
+    phraseMeasure(BEBOP_251_C[2], shift, I),
+  ];
+}
+
 export const TEMPLATES: Template[] = [
+  {
+    id: "bebop-251-c",
+    label: "Bebop ii–V–I lick in C (original)",
+    root: PC.C,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: bebop251(PC.C, 0),
+  },
+  {
+    id: "bebop-251-f",
+    label: "Bebop ii–V–I lick in F (original)",
+    root: PC.F,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: bebop251(PC.F, -7),
+  },
+  {
+    id: "bebop-251-bb",
+    label: "Bebop ii–V–I lick in Bb (original)",
+    root: PC.Bb,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: bebop251(PC.Bb, -2),
+  },
   {
     id: "swonderful-a",
     label: "'S Wonderful — Aセクション (Eb, Gershwin)",
