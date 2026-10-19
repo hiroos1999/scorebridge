@@ -1,4 +1,4 @@
-import type { Measure, Note, TimeSignature } from "@/components/StaffToFretboard";
+import type { Harmony, Measure, Note, TimeSignature } from "@/components/StaffToFretboard";
 
 // 曲テンプレート（ジャズスタンダードの練習用プリセット）。
 // 「テンプレート」選択UIから読み込むと、measures・root(キー)・useFlats・timeSigを
@@ -445,6 +445,51 @@ function midiToNote(startGrid: number, duration: number, midi: number): Note {
   if (rowIdx < 0) throw new Error(`midiToNote: MIDI ${midi} is out of range`);
   return note(startGrid, duration, rowIdx, -1);
 }
+// ジャズブルース（F）12小節。メロディは「その時鳴っているコードの3度を1拍目、7度を3拍目」に
+// 置いたガイドトーン・ライン。各音は直前の音に最も近いオクターブを選ぶ。
+// コード: [ルート, 種類, 3度, 7度]。3度・7度は「音名+臨時記号」（例: "Eb"、"F#"）。
+type BluesChord = [number, string, string, string];
+const BL_F7: BluesChord = [PC.F, "7", "A", "Eb"];
+const BL_BB7: BluesChord = [PC.Bb, "7", "D", "Ab"];
+const BL_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
+const BL_BDIM: BluesChord = [PC.B, "dim", "D", "Ab"];
+const BL_AM7B5: BluesChord = [PC.A, "m7b5", "C", "G"];
+const BL_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const BL_GM7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const BL_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+// 1小節 = 1拍目のコードと3拍目のコード（同じなら1つ）
+const JAZZ_BLUES_F_BARS: [BluesChord, BluesChord][] = [
+  [BL_F7, BL_F7], [BL_BB7, BL_BB7], [BL_F7, BL_F7], [BL_CM7, BL_F7],
+  [BL_BB7, BL_BB7], [BL_BDIM, BL_BDIM], [BL_F7, BL_F7], [BL_AM7B5, BL_D7],
+  [BL_GM7, BL_GM7], [BL_C7, BL_C7], [BL_F7, BL_D7], [BL_GM7, BL_C7],
+];
+const NATURAL_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+function guideToneNote(name: string, startGrid: number, prevMidi: number): { note: Note; midi: number } {
+  const letter = name[0];
+  const acc = name.length > 1 ? (name[1] === "#" ? 1 : -1) : 0;
+  let best = -1;
+  for (let oct = 3; oct <= 6; oct++) {
+    const natural = 12 * (oct + 1) + NATURAL_PC[letter];
+    if (ROW_MIDI.indexOf(natural) < 0) continue;
+    const midi = natural + acc;
+    if (midi < 62 || midi > 81) continue;
+    if (best < 0 || Math.abs(midi - prevMidi) < Math.abs(best - prevMidi)) best = midi;
+  }
+  const natural = best - acc;
+  return { note: note(startGrid, 8, ROW_MIDI.indexOf(natural), acc), midi: best };
+}
+function jazzBluesF(): Measure[] {
+  let prev = 69; // A4付近から開始
+  return JAZZ_BLUES_F_BARS.map(([c1, c3]) => {
+    const third = guideToneNote(c1[2], 0, prev);
+    const seventh = guideToneNote(c3[3], 8, third.midi);
+    prev = seventh.midi;
+    const harmonies: Harmony[] = [{ offsetGrid: 0, root: c1[0], kind: c1[1], inversion: 0 }];
+    if (c3 !== c1) harmonies.push({ offsetGrid: 8, root: c3[0], kind: c3[1], inversion: 0 });
+    return { notes: [third.note, seventh.note], harmonies };
+  });
+}
+
 function phraseMeasure(
   line: [number, number][],
   shift: number,
@@ -479,6 +524,14 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "jazz-blues-f",
+    label: "Jazz blues in F — guide-tone melody (3rd on beat 1, 7th on beat 3)",
+    root: PC.F,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: jazzBluesF(),
+  },
   {
     id: "bebop-251-c",
     label: "Bebop ii–V–I lick in C (original)",
