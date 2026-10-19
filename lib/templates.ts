@@ -464,7 +464,7 @@ const JAZZ_BLUES_F_BARS: [BluesChord, BluesChord][] = [
   [BL_GM7, BL_GM7], [BL_C7, BL_C7], [BL_F7, BL_D7], [BL_GM7, BL_C7],
 ];
 const NATURAL_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-function guideToneNote(name: string, startGrid: number, prevMidi: number): { note: Note; midi: number } {
+function guideToneNote(name: string, startGrid: number, prevMidi: number, duration = 8): { note: Note; midi: number } {
   const letter = name[0];
   const acc = name.length > 1 ? (name[1] === "#" ? 1 : -1) : 0;
   let best = -1;
@@ -476,16 +476,27 @@ function guideToneNote(name: string, startGrid: number, prevMidi: number): { not
     if (best < 0 || Math.abs(midi - prevMidi) < Math.abs(best - prevMidi)) best = midi;
   }
   const natural = best - acc;
-  return { note: note(startGrid, 8, ROW_MIDI.indexOf(natural), acc), midi: best };
+  return { note: note(startGrid, duration, ROW_MIDI.indexOf(natural), acc), midi: best };
 }
 function jazzBluesF(): Measure[] {
   let prev = 69; // A4付近から開始
   return JAZZ_BLUES_F_BARS.map(([c1, c3]) => {
+    const harmonies: Harmony[] = [{ offsetGrid: 0, root: c1[0], kind: c1[1], inversion: 0 }];
+    if (c3 !== c1) {
+      // 1小節に2コード: 各コードの3度→7度を4分音符で（倍速）
+      harmonies.push({ offsetGrid: 8, root: c3[0], kind: c3[1], inversion: 0 });
+      const picks: [string, number][] = [[c1[2], 0], [c1[3], 4], [c3[2], 8], [c3[3], 12]];
+      const notes: Note[] = [];
+      for (const [name, at] of picks) {
+        const g = guideToneNote(name, at, prev, 4);
+        notes.push(g.note);
+        prev = g.midi;
+      }
+      return { notes, harmonies };
+    }
     const third = guideToneNote(c1[2], 0, prev);
     const seventh = guideToneNote(c3[3], 8, third.midi);
     prev = seventh.midi;
-    const harmonies: Harmony[] = [{ offsetGrid: 0, root: c1[0], kind: c1[1], inversion: 0 }];
-    if (c3 !== c1) harmonies.push({ offsetGrid: 8, root: c3[0], kind: c3[1], inversion: 0 });
     return { notes: [third.note, seventh.note], harmonies };
   });
 }
@@ -526,7 +537,7 @@ function bebop251(key: number, shift: number): Measure[] {
 export const TEMPLATES: Template[] = [
   {
     id: "jazz-blues-f",
-    label: "Jazz blues in F — guide-tone melody (3rd on beat 1, 7th on beat 3)",
+    label: "Jazz blues in F — guide-tone melody (3rd / 7th)",
     root: PC.F,
     useFlats: true,
     timeSig: FOUR_FOUR,
