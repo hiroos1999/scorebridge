@@ -543,6 +543,34 @@ function autumnLeavesG(): Measure[] {
   return twoChoruses(guideToneChorus([...AL_A, ...AL_A, ...AL_B, ...AL_C], 60, 72));
 }
 
+// Days of Wine and Roses（F）32小節 AABA'。AL_と同じくガイドトーン・ライン、2コーラス目は1オクターブ上。
+const WR_FM7: BluesChord = [PC.F, "maj7", "A", "E"];
+const WR_EM7B5: BluesChord = [PC.E, "m7b5", "G", "D"];
+const WR_A7: BluesChord = [PC.A, "7", "C#", "G"];
+const WR_DM7: BluesChord = [PC.D, "m7", "F", "C"];
+const WR_GM7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const WR_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+const WR_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
+const WR_F7: BluesChord = [PC.F, "7", "A", "Eb"];
+const WR_BBM7: BluesChord = [PC.Bb, "maj7", "D", "A"];
+const WR_AM7B5: BluesChord = [PC.A, "m7b5", "C", "G"];
+const WR_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const WR_A1: [BluesChord, BluesChord][] = [
+  [WR_FM7, WR_FM7], [WR_EM7B5, WR_A7], [WR_DM7, WR_DM7], [WR_DM7, WR_DM7],
+  [WR_GM7, WR_GM7], [WR_C7, WR_C7], [WR_FM7, WR_FM7], [WR_GM7, WR_C7],
+];
+const WR_A2: [BluesChord, BluesChord][] = [
+  [WR_FM7, WR_FM7], [WR_EM7B5, WR_A7], [WR_DM7, WR_DM7], [WR_DM7, WR_DM7],
+  [WR_GM7, WR_GM7], [WR_C7, WR_C7], [WR_FM7, WR_FM7], [WR_FM7, WR_FM7],
+];
+const WR_B: [BluesChord, BluesChord][] = [
+  [WR_CM7, WR_CM7], [WR_F7, WR_F7], [WR_BBM7, WR_BBM7], [WR_BBM7, WR_BBM7],
+  [WR_AM7B5, WR_AM7B5], [WR_D7, WR_D7], [WR_GM7, WR_GM7], [WR_GM7, WR_C7],
+];
+function daysOfWineAndRosesF(): Measure[] {
+  return twoChoruses(guideToneChorus([...WR_A1, ...WR_A2, ...WR_B, ...WR_A1], 60, 72));
+}
+
 function phraseMeasure(
   line: [number, number][],
   shift: number,
@@ -577,6 +605,14 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "days-of-wine-and-roses-f",
+    label: "The Days of Wine and Roses in F — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.F,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: daysOfWineAndRosesF(),
+  },
   {
     id: "autumn-leaves-g",
     label: "Autumn Leaves in Gm — guide-tone melody (3rd / 7th, 2 choruses)",
