@@ -598,6 +598,87 @@ function neverAnotherYouEb(): Measure[] {
   return twoChoruses(guideToneChorus([...TW_A1, ...TW_A2, ...TW_B, ...TW_A3], 60, 72));
 }
 
+// All of Me（C）32小節 ABAC。ガイドトーン・ライン、2コーラス目は1オクターブ上。C6の「7度」は6度(A)。
+const AM_C6: BluesChord = [PC.C, "6", "E", "A"];
+const AM_E7: BluesChord = [PC.E, "7", "G#", "D"];
+const AM_A7: BluesChord = [PC.A, "7", "C#", "G"];
+const AM_DM7: BluesChord = [PC.D, "m7", "F", "C"];
+const AM_AM7: BluesChord = [PC.A, "m7", "C", "G"];
+const AM_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const AM_G7: BluesChord = [PC.G, "7", "B", "F"];
+const AM_FM7: BluesChord = [PC.F, "maj7", "A", "E"];
+const AM_FM6: BluesChord = [PC.F, "m6", "Ab", "D"];
+const AM_EM7: BluesChord = [PC.E, "m7", "G", "D"];
+const AM_A: [BluesChord, BluesChord][] = [
+  [AM_C6, AM_C6], [AM_C6, AM_C6], [AM_E7, AM_E7], [AM_E7, AM_E7],
+  [AM_A7, AM_A7], [AM_A7, AM_A7], [AM_DM7, AM_DM7], [AM_DM7, AM_DM7],
+];
+const AM_B: [BluesChord, BluesChord][] = [
+  [AM_E7, AM_E7], [AM_E7, AM_E7], [AM_AM7, AM_AM7], [AM_AM7, AM_AM7],
+  [AM_D7, AM_D7], [AM_D7, AM_D7], [AM_DM7, AM_DM7], [AM_G7, AM_G7],
+];
+const AM_C: [BluesChord, BluesChord][] = [
+  [AM_FM7, AM_FM7], [AM_FM6, AM_FM6], [AM_C6, AM_C6], [AM_EM7, AM_A7],
+  [AM_DM7, AM_DM7], [AM_G7, AM_G7], [AM_C6, AM_C6], [AM_DM7, AM_G7],
+];
+function allOfMeC(): Measure[] {
+  return twoChoruses(guideToneChorus([...AM_A, ...AM_B, ...AM_A, ...AM_C], 60, 72));
+}
+
+// Joy Spring（F）32小節 ABCA。Web上のコード表（guitarcomposerstoolbox）の並びを小節に割り当てたもの。
+const JS_FM7: BluesChord = [PC.F, "maj7", "A", "E"];
+const JS_GM7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const JS_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+const JS_BBM7: BluesChord = [PC.Bb, "m7", "Db", "Ab"];
+const JS_EB7: BluesChord = [PC.Eb, "7", "G", "Db"];
+const JS_AM7: BluesChord = [PC.A, "m7", "C", "G"];
+const JS_AB7: BluesChord = [PC.Ab, "7", "C", "Gb"];
+const JS_ABM7: BluesChord = [PC.Ab, "m7", "Cb", "Gb"];
+const JS_DB7: BluesChord = [PC.Db, "7", "F", "Cb"];
+const JS_GBM7: BluesChord = [PC.Gb, "maj7", "Bb", "F"];
+const JS_BM7: BluesChord = [PC.B, "m7", "D", "A"];
+const JS_E7: BluesChord = [PC.E, "7", "G#", "D"];
+const JS_A7: BluesChord = [PC.A, "7", "C#", "G"];
+const JS_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const JS_GMAJ7: BluesChord = [PC.G, "maj7", "B", "F#"];
+const JS_FM7MIN: BluesChord = [PC.F, "m7", "Ab", "Eb"];
+const JS_BB7: BluesChord = [PC.Bb, "7", "D", "Ab"];
+const JS_EBM7: BluesChord = [PC.Eb, "maj7", "G", "D"];
+const JS_A1: [BluesChord, BluesChord][] = [
+  [JS_FM7, JS_FM7], [JS_GM7, JS_C7], [JS_FM7, JS_FM7], [JS_BBM7, JS_EB7],
+  [JS_AM7, JS_AB7], [JS_GM7, JS_C7], [JS_FM7, JS_FM7], [JS_ABM7, JS_DB7],
+];
+const JS_A2: [BluesChord, BluesChord][] = [...JS_A1.slice(0, 7), [JS_GM7, JS_C7]];
+const JS_B: [BluesChord, BluesChord][] = [
+  [JS_GBM7, JS_GBM7], [JS_ABM7, JS_DB7], [JS_GBM7, JS_GBM7], [JS_BM7, JS_E7],
+  [JS_BBM7, JS_A7], [JS_ABM7, JS_DB7], [JS_GBM7, JS_GBM7], [JS_AM7, JS_D7],
+];
+const JS_C: [BluesChord, BluesChord][] = [
+  [JS_GMAJ7, JS_GMAJ7], [JS_GM7, JS_C7], [JS_FM7, JS_FM7], [JS_FM7MIN, JS_BB7],
+  [JS_EBM7, JS_EBM7], [JS_ABM7, JS_DB7], [JS_GBM7, JS_GBM7], [JS_GM7, JS_C7],
+];
+function joySpringF(): Measure[] {
+  return twoChoruses(guideToneChorus([...JS_A1, ...JS_B, ...JS_C, ...JS_A2], 60, 72));
+}
+
+// Softly, as in a Morning Sunrise（Cm）32小節 AABA。ガイドトーン・ライン、2コーラス目は1オクターブ上。
+const SF_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
+const SF_DM7B5: BluesChord = [PC.D, "m7b5", "F", "C"];
+const SF_G7: BluesChord = [PC.G, "7", "B", "F"];
+const SF_FM7: BluesChord = [PC.F, "m7", "Ab", "Eb"];
+const SF_AB7: BluesChord = [PC.Ab, "7", "C", "Gb"];
+const SF_A: [BluesChord, BluesChord][] = [
+  [SF_CM7, SF_CM7], [SF_CM7, SF_CM7], [SF_DM7B5, SF_DM7B5], [SF_G7, SF_G7],
+  [SF_CM7, SF_CM7], [SF_CM7, SF_CM7], [SF_DM7B5, SF_DM7B5], [SF_G7, SF_G7],
+];
+const SF_B: [BluesChord, BluesChord][] = [
+  [SF_FM7, SF_FM7], [SF_FM7, SF_FM7], [SF_DM7B5, SF_DM7B5], [SF_G7, SF_G7],
+  [SF_CM7, SF_CM7], [SF_AB7, SF_AB7], [SF_DM7B5, SF_DM7B5], [SF_G7, SF_G7],
+];
+function softlyCm(): Measure[] {
+  return twoChoruses(guideToneChorus([...SF_A, ...SF_A, ...SF_B, ...SF_A], 60, 72));
+}
+
 function phraseMeasure(
   line: [number, number][],
   shift: number,
@@ -632,6 +713,30 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "all-of-me-c",
+    label: "All of Me in C — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.C,
+    useFlats: false,
+    timeSig: FOUR_FOUR,
+    measures: allOfMeC(),
+  },
+  {
+    id: "joy-spring-f",
+    label: "Joy Spring in F — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.F,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: joySpringF(),
+  },
+  {
+    id: "softly-cm",
+    label: "Softly, as in a Morning Sunrise in Cm — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.Eb,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: softlyCm(),
+  },
   {
     id: "never-another-you-eb",
     label: "There Will Never Be Another You in Eb — guide-tone melody (3rd / 7th, 2 choruses)",
