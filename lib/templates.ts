@@ -464,7 +464,7 @@ const JAZZ_BLUES_F_BARS: [BluesChord, BluesChord][] = [
   [BL_GM7, BL_GM7], [BL_C7, BL_C7], [BL_F7, BL_D7], [BL_GM7, BL_C7],
 ];
 const NATURAL_PC: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-function guideToneNote(name: string, startGrid: number, prevMidi: number, duration = 8): { note: Note; midi: number } {
+function guideToneNote(name: string, startGrid: number, prevMidi: number, duration = 8, lo = 62, hi = 81): { note: Note; midi: number } {
   const letter = name[0];
   const acc = name.length > 1 ? (name[1] === "#" ? 1 : -1) : 0;
   let best = -1;
@@ -472,29 +472,16 @@ function guideToneNote(name: string, startGrid: number, prevMidi: number, durati
     const natural = 12 * (oct + 1) + NATURAL_PC[letter];
     if (ROW_MIDI.indexOf(natural) < 0) continue;
     const midi = natural + acc;
-    if (midi < 62 || midi > 81) continue;
+    if (midi < lo || midi > hi) continue;
     if (best < 0 || Math.abs(midi - prevMidi) < Math.abs(best - prevMidi)) best = midi;
   }
   const natural = best - acc;
   return { note: note(startGrid, duration, ROW_MIDI.indexOf(natural), acc), midi: best };
 }
-function jazzBluesF(): Measure[] {
-  const chorus1 = jazzBluesFChorus();
-  // 2コーラス目: 同じ旋律を1オクターブ上（五線上で7段上）に
-  const chorus2: Measure[] = chorus1.map((m) => ({
-    ...m,
-    notes: m.notes.map((n) => {
-      const r = n.rowIdxList[0];
-      if (r < 7) throw new Error("jazzBluesF: octave-up is out of staff range");
-      return note(n.startGrid, n.duration, r - 7, n.accidentals[r] ?? 0);
-    }),
-    harmonies: m.harmonies.map((h) => ({ ...h })),
-  }));
-  return [...chorus1, ...chorus2];
-}
-function jazzBluesFChorus(): Measure[] {
+// 1コーラス分のガイドトーン・ライン。bars は1小節ごとに [1拍目のコード, 3拍目のコード]。
+function guideToneChorus(bars: [BluesChord, BluesChord][], lo = 62, hi = 81): Measure[] {
   let prev = 69; // A4付近から開始
-  return JAZZ_BLUES_F_BARS.map(([c1, c3]) => {
+  return bars.map(([c1, c3]) => {
     const harmonies: Harmony[] = [{ offsetGrid: 0, root: c1[0], kind: c1[1], inversion: 0 }];
     if (c3 !== c1) {
       // 1小節に2コード: 各コードの3度→7度を4分音符で（倍速）
@@ -502,17 +489,58 @@ function jazzBluesFChorus(): Measure[] {
       const picks: [string, number][] = [[c1[2], 0], [c1[3], 4], [c3[2], 8], [c3[3], 12]];
       const notes: Note[] = [];
       for (const [name, at] of picks) {
-        const g = guideToneNote(name, at, prev, 4);
+        const g = guideToneNote(name, at, prev, 4, lo, hi);
         notes.push(g.note);
         prev = g.midi;
       }
       return { notes, harmonies };
     }
-    const third = guideToneNote(c1[2], 0, prev);
-    const seventh = guideToneNote(c3[3], 8, third.midi);
+    const third = guideToneNote(c1[2], 0, prev, 8, lo, hi);
+    const seventh = guideToneNote(c3[3], 8, third.midi, 8, lo, hi);
     prev = seventh.midi;
     return { notes: [third.note, seventh.note], harmonies };
   });
+}
+// 2コーラス: 2コーラス目は同じ旋律を1オクターブ上（五線上で7段上）に。
+function twoChoruses(chorus1: Measure[]): Measure[] {
+  const chorus2: Measure[] = chorus1.map((m) => ({
+    ...m,
+    notes: m.notes.map((n) => {
+      const r = n.rowIdxList[0];
+      if (r < 7) throw new Error("twoChoruses: octave-up is out of staff range");
+      return note(n.startGrid, n.duration, r - 7, n.accidentals[r] ?? 0);
+    }),
+    harmonies: m.harmonies.map((h) => ({ ...h })),
+  }));
+  return [...chorus1, ...chorus2];
+}
+function jazzBluesF(): Measure[] {
+  return twoChoruses(guideToneChorus(JAZZ_BLUES_F_BARS));
+}
+// 枯葉（Gm）32小節 AABC。3度・7度のガイドトーン（C=Gmは便宜上Gm7）。2コーラス目は1オクターブ上。
+const AL_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
+const AL_F7: BluesChord = [PC.F, "7", "A", "Eb"];
+const AL_BBM7: BluesChord = [PC.Bb, "maj7", "D", "A"];
+const AL_EBM7: BluesChord = [PC.Eb, "maj7", "G", "D"];
+const AL_AM7B5: BluesChord = [PC.A, "m7b5", "C", "G"];
+const AL_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const AL_GM7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const AL_EB7: BluesChord = [PC.Eb, "7", "G", "Db"];
+const AL_A: [BluesChord, BluesChord][] = [
+  [AL_CM7, AL_CM7], [AL_F7, AL_F7], [AL_BBM7, AL_BBM7], [AL_EBM7, AL_EBM7],
+  [AL_AM7B5, AL_AM7B5], [AL_D7, AL_D7], [AL_GM7, AL_GM7], [AL_GM7, AL_GM7],
+];
+const AL_B: [BluesChord, BluesChord][] = [
+  [AL_AM7B5, AL_AM7B5], [AL_D7, AL_D7], [AL_GM7, AL_GM7], [AL_GM7, AL_GM7],
+  [AL_CM7, AL_CM7], [AL_F7, AL_F7], [AL_BBM7, AL_BBM7], [AL_EBM7, AL_EBM7],
+];
+const AL_C: [BluesChord, BluesChord][] = [
+  [AL_AM7B5, AL_AM7B5], [AL_D7, AL_D7], [AL_GM7, AL_GM7], [AL_GM7, AL_GM7],
+  [AL_EB7, AL_EB7], [AL_AM7B5, AL_D7], [AL_GM7, AL_GM7], [AL_GM7, AL_GM7],
+];
+function autumnLeavesG(): Measure[] {
+  // 音域は C4〜C5（2コーラス目の1オクターブ上が五線内に収まるように）
+  return twoChoruses(guideToneChorus([...AL_A, ...AL_A, ...AL_B, ...AL_C], 60, 72));
 }
 
 function phraseMeasure(
@@ -549,6 +577,14 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "autumn-leaves-g",
+    label: "Autumn Leaves in Gm — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.Bb,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: autumnLeavesG(),
+  },
   {
     id: "jazz-blues-f",
     label: "Jazz blues in F — guide-tone melody (3rd / 7th, 2 choruses)",
