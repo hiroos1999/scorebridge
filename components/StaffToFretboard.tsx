@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Square, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Sparkles, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES } from "@/lib/templates";
+import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/patterns";
 import { parseMusicXmlFile } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
 import IconButton from "@/components/IconButton";
@@ -653,6 +654,10 @@ export default function StaffToFretboard({
   // MusicXMLインポート（サーバーには送信せず、ブラウザのIndexedDBにのみ保存する）。
   const [importedSongs, setImportedSongs] = useState<ImportedSong[]>([]);
   const [selectedImportId, setSelectedImportId] = useState("");
+  // パターン適用(コードの度数を並べたメロディの自動生成)の入力状態
+  const [patternText, setPatternText] = useState("3 7");
+  const [patternOctave, setPatternOctave] = useState(0);
+  const [patternError, setPatternError] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [lastImportWarnings, setLastImportWarnings] = useState<{ fileName: string; warnings: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1394,6 +1399,22 @@ export default function StaffToFretboard({
     if (!template) return;
     loadInitialData(template);
     setSelectedImportId("");
+  }
+
+  // 譜面上のコード(harmonies)に、度数パターンを当てはめてメロディを作り直す。
+  // 既存のメロディ(notes)は置き換わる。コードの入っていない小節は直前のコードを引き継ぐ。
+  function handleApplyPattern() {
+    const tokens = parsePattern(patternText);
+    if (!tokens) {
+      setPatternError(true);
+      return;
+    }
+    setPatternError(false);
+    setMeasures((prev) =>
+      applyPatternToMeasures(prev, { tokens, octave: patternOctave, useFlats, gridsPerMeasure })
+    );
+    setSelectedNoteKey(null);
+    setSelectedRowIdx(null);
   }
 
   // ページ表示時に、IndexedDBに保存済みのインポート曲一覧を読み込んでおく
@@ -2301,6 +2322,72 @@ export default function StaffToFretboard({
             disabled={isImporting}
             onClick={() => fileInputRef.current?.click()}
           />
+        </div>
+
+        <div className="toolbar-group" data-cap="Pattern (chord tones)">
+          <select
+            aria-label="Pattern preset"
+            value=""
+            onChange={(e) => {
+              if (!e.target.value) return;
+              setPatternText(e.target.value);
+              setPatternError(false);
+            }}
+          >
+            <option value="">Presets…</option>
+            {PATTERN_PRESETS.map((p) => (
+              <option key={p.label} value={p.text}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <input
+            id="pattern-input"
+            type="text"
+            aria-label="Chord-tone pattern (e.g. 3 1 5+ 7)"
+            aria-invalid={patternError}
+            title="1 3 5 7 9 11 13 を空白区切りで。b9 / #11 のように♭♯、5+ / 5- で直前の音より上/下"
+            value={patternText}
+            onChange={(e) => {
+              setPatternText(e.target.value);
+              setPatternError(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleApplyPattern();
+            }}
+            style={{
+              height: 36,
+              width: 130,
+              borderRadius: 8,
+              padding: "0 10px",
+              fontSize: 13,
+              background: "var(--surface-0)",
+              color: "var(--text-primary)",
+              border: `1px solid ${patternError ? "#e5645a" : "var(--border)"}`,
+            }}
+          />
+          <select
+            aria-label="Pattern octave"
+            value={patternOctave}
+            onChange={(e) => setPatternOctave(parseInt(e.target.value, 10))}
+          >
+            <option value={-1}>Oct −1</option>
+            <option value={0}>Oct 0</option>
+            <option value={1}>Oct +1</option>
+          </select>
+          <IconButton
+            id="pattern-apply-btn"
+            label="Apply pattern to chords (replaces melody)"
+            icon={<Sparkles size={16} />}
+            text="Apply"
+            variant="outline"
+            onClick={handleApplyPattern}
+          />
+          {patternError && (
+            <span role="alert" style={{ fontSize: 12, color: "#e5645a" }}>
+              Use degrees like 1 3 5 7 9 11 13
+            </span>
+          )}
         </div>
 
         <div className="toolbar-group" data-cap="Key & meter">
