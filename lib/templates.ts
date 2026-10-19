@@ -479,6 +479,20 @@ function guideToneNote(name: string, startGrid: number, prevMidi: number, durati
   return { note: note(startGrid, duration, ROW_MIDI.indexOf(natural), acc), midi: best };
 }
 function jazzBluesF(): Measure[] {
+  const chorus1 = jazzBluesFChorus();
+  // 2コーラス目: 同じ旋律を1オクターブ上（五線上で7段上）に
+  const chorus2: Measure[] = chorus1.map((m) => ({
+    ...m,
+    notes: m.notes.map((n) => {
+      const r = n.rowIdxList[0];
+      if (r < 7) throw new Error("jazzBluesF: octave-up is out of staff range");
+      return note(n.startGrid, n.duration, r - 7, n.accidentals[r] ?? 0);
+    }),
+    harmonies: m.harmonies.map((h) => ({ ...h })),
+  }));
+  return [...chorus1, ...chorus2];
+}
+function jazzBluesFChorus(): Measure[] {
   let prev = 69; // A4付近から開始
   return JAZZ_BLUES_F_BARS.map(([c1, c3]) => {
     const harmonies: Harmony[] = [{ offsetGrid: 0, root: c1[0], kind: c1[1], inversion: 0 }];
@@ -537,7 +551,7 @@ function bebop251(key: number, shift: number): Measure[] {
 export const TEMPLATES: Template[] = [
   {
     id: "jazz-blues-f",
-    label: "Jazz blues in F — guide-tone melody (3rd / 7th)",
+    label: "Jazz blues in F — guide-tone melody (3rd / 7th, 2 choruses)",
     root: PC.F,
     useFlats: true,
     timeSig: FOUR_FOUR,
