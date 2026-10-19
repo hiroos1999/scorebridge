@@ -571,6 +571,33 @@ function daysOfWineAndRosesF(): Measure[] {
   return twoChoruses(guideToneChorus([...WR_A1, ...WR_A2, ...WR_B, ...WR_A1], 60, 72));
 }
 
+// There Will Never Be Another You（Eb）32小節 AABA'。ガイドトーン・ライン、2コーラス目は1オクターブ上。
+const TW_EBM7: BluesChord = [PC.Eb, "maj7", "G", "D"];
+const TW_FM7: BluesChord = [PC.F, "m7", "Ab", "Eb"];
+const TW_BB7: BluesChord = [PC.Bb, "7", "D", "Ab"];
+const TW_GM7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const TW_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+const TW_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
+const TW_ABM7: BluesChord = [PC.Ab, "maj7", "C", "G"];
+const TW_ABMIN7: BluesChord = [PC.Ab, "m7", "Cb", "Gb"];
+const TW_DB7: BluesChord = [PC.Db, "7", "F", "Cb"];
+const TW_A1: [BluesChord, BluesChord][] = [
+  [TW_EBM7, TW_EBM7], [TW_FM7, TW_BB7], [TW_EBM7, TW_EBM7], [TW_EBM7, TW_EBM7],
+  [TW_FM7, TW_FM7], [TW_BB7, TW_BB7], [TW_GM7, TW_C7], [TW_FM7, TW_BB7],
+];
+const TW_A2: [BluesChord, BluesChord][] = [
+  [TW_EBM7, TW_EBM7], [TW_FM7, TW_BB7], [TW_EBM7, TW_EBM7], [TW_EBM7, TW_EBM7],
+  [TW_FM7, TW_FM7], [TW_BB7, TW_BB7], [TW_EBM7, TW_EBM7], [TW_EBM7, TW_EBM7],
+];
+const TW_B: [BluesChord, BluesChord][] = [
+  [TW_ABM7, TW_ABM7], [TW_ABMIN7, TW_DB7], [TW_GM7, TW_GM7], [TW_C7, TW_C7],
+  [TW_FM7, TW_FM7], [TW_BB7, TW_BB7], [TW_EBM7, TW_EBM7], [TW_EBM7, TW_EBM7],
+];
+const TW_A3: [BluesChord, BluesChord][] = [...TW_A2.slice(0, 6), [TW_EBM7, TW_CM7], [TW_FM7, TW_BB7]];
+function neverAnotherYouEb(): Measure[] {
+  return twoChoruses(guideToneChorus([...TW_A1, ...TW_A2, ...TW_B, ...TW_A3], 60, 72));
+}
+
 function phraseMeasure(
   line: [number, number][],
   shift: number,
@@ -605,6 +632,14 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "never-another-you-eb",
+    label: "There Will Never Be Another You in Eb — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.Eb,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: neverAnotherYouEb(),
+  },
   {
     id: "days-of-wine-and-roses-f",
     label: "The Days of Wine and Roses in F — guide-tone melody (3rd / 7th, 2 choruses)",
