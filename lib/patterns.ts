@@ -134,6 +134,9 @@ export type ApplyOptions = {
   octave: number; // -1 0 +1: 全体の高さの目安をオクターブ単位でずらす
   useFlats: boolean;
   gridsPerMeasure: number;
+  // 指定すると、この範囲（小節番号, 両端を含む）のメロディだけ作り直す。範囲外は変更しない。
+  // コードの引き継ぎは範囲外の小節も含めて行う。
+  range?: { from: number; to: number };
 };
 
 // 1コード分の音列を作る。最初の音は「パターン全体の平均の高さが目安(center)に最も近くなる」
@@ -177,15 +180,16 @@ function buildLine(
 // 全小節のコード（harmonies）にパターンを当てはめ、メロディ(notes)を作り直す。
 // コードのない小節は、直前のコードを引き継ぐ。最初のコードより前の小節は空になる。
 export function applyPatternToMeasures(measures: Measure[], opts: ApplyOptions): Measure[] {
-  const { tokens, octave, useFlats, gridsPerMeasure } = opts;
+  const { tokens, octave, useFlats, gridsPerMeasure, range } = opts;
   const center = 67 + 12 * octave;
   let carried: Harmony | null = null;
-  return measures.map((m) => {
+  return measures.map((m, mi) => {
     const sorted = [...m.harmonies].sort((a, b) => a.offsetGrid - b.offsetGrid);
     const starts: { at: number; chord: Harmony }[] = [];
     if (carried && (sorted.length === 0 || sorted[0].offsetGrid > 0)) starts.push({ at: 0, chord: carried });
     for (const h of sorted) starts.push({ at: h.offsetGrid, chord: h });
     if (sorted.length > 0) carried = sorted[sorted.length - 1];
+    if (range && (mi < range.from || mi > range.to)) return m;
     if (starts.length === 0) return { ...m, notes: [] };
 
     const notes: Note[] = [];

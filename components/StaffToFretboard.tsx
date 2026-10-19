@@ -657,6 +657,7 @@ export default function StaffToFretboard({
   // パターン適用(コードの度数を並べたメロディの自動生成)の入力状態
   const [patternText, setPatternText] = useState("3 7");
   const [patternOctave, setPatternOctave] = useState(0);
+  const [patternScope, setPatternScope] = useState<"all" | "measure" | "from">("all");
   const [patternError, setPatternError] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [lastImportWarnings, setLastImportWarnings] = useState<{ fileName: string; warnings: string[] } | null>(null);
@@ -1402,7 +1403,7 @@ export default function StaffToFretboard({
   }
 
   // 譜面上のコード(harmonies)に、度数パターンを当てはめてメロディを作り直す。
-  // 既存のメロディ(notes)は置き換わる。コードの入っていない小節は直前のコードを引き継ぐ。
+  // 範囲(Scope)内の既存メロディ(notes)は置き換わる。コードの入っていない小節は直前のコードを引き継ぐ。
   function handleApplyPattern() {
     const tokens = parsePattern(patternText);
     if (!tokens) {
@@ -1411,7 +1412,16 @@ export default function StaffToFretboard({
     }
     setPatternError(false);
     setMeasures((prev) =>
-      applyPatternToMeasures(prev, { tokens, octave: patternOctave, useFlats, gridsPerMeasure })
+      applyPatternToMeasures(prev, {
+        tokens,
+        octave: patternOctave,
+        useFlats,
+        gridsPerMeasure,
+        range:
+          patternScope === "all"
+            ? undefined
+            : { from: currentMeasureIndex, to: patternScope === "measure" ? currentMeasureIndex : prev.length - 1 },
+      })
     );
     setSelectedNoteKey(null);
     setSelectedRowIdx(null);
@@ -2375,6 +2385,15 @@ export default function StaffToFretboard({
             <option value={0}>Oct 0</option>
             <option value={1}>Oct +1</option>
           </select>
+          <select
+            aria-label="Pattern scope"
+            value={patternScope}
+            onChange={(e) => setPatternScope(e.target.value as "all" | "measure" | "from")}
+          >
+            <option value="all">All measures</option>
+            <option value="measure">This measure</option>
+            <option value="from">From this measure</option>
+          </select>
           <IconButton
             id="pattern-apply-btn"
             label="Apply pattern to chords (replaces melody)"
@@ -2383,6 +2402,32 @@ export default function StaffToFretboard({
             variant="outline"
             onClick={handleApplyPattern}
           />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, flexBasis: "100%" }}>
+            {["1", "3", "5", "7", "9", "11", "13", "b9", "#11", "b13", "+", "-"].map((t) => (
+              <button
+                key={t}
+                type="button"
+                aria-label={`Add ${t}`}
+                style={{ height: 28, minWidth: 30, padding: "0 8px", fontSize: 12 }}
+                onClick={() => {
+                  setPatternText((prev) =>
+                    t === "+" || t === "-" ? prev.trimEnd() + t : (prev.trim() ? prev.trimEnd() + " " : "") + t
+                  );
+                  setPatternError(false);
+                }}
+              >
+                {t}
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-label="Remove last"
+              style={{ height: 28, padding: "0 8px", fontSize: 12 }}
+              onClick={() => setPatternText((prev) => prev.trim().split(/\s+/).slice(0, -1).join(" "))}
+            >
+              ⌫
+            </button>
+          </div>
           {patternError && (
             <span role="alert" style={{ fontSize: 12, color: "#e5645a" }}>
               Use degrees like 1 3 5 7 9 11 13
