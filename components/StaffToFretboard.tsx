@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Sparkles, Square, Trash2
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES } from "@/lib/templates";
+import { PRACTICE_ORDERS, prefersFlats, transposeMeasures } from "@/lib/transpose";
 import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/patterns";
 import { parseMusicXmlFile } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
@@ -659,6 +660,10 @@ export default function StaffToFretboard({
   const [patternOctave, setPatternOctave] = useState(0);
   const [patternScope, setPatternScope] = useState<"all" | "measure" | "from">("all");
   const [patternError, setPatternError] = useState(false);
+  // 12キー練習: 譜面を次々に移調しながら続けて再生する
+  const [practiceMode, setPracticeMode] = useState<"off" | "fourths" | "chromatic">("off");
+  const [practiceStatus, setPracticeStatus] = useState("");
+  const practiceRef = useRef<{ measures: Measure[]; root: number; useFlats: boolean } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [lastImportWarnings, setLastImportWarnings] = useState<{ fileName: string; warnings: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -927,10 +932,56 @@ export default function StaffToFretboard({
 
   async function handlePlayClick() {
     if (isPlaying) {
+      abortPractice(true);
       stopPlayback();
       return;
     }
-    const hasContent = measures.some((m) => m.notes.length > 0 || m.harmonies.length > 0);
+    if (practiceMode !== "off") {
+      await startPractice();
+      return;
+    }
+    await playScore(measures);
+  }
+
+  // 12キー練習を中断/終了する。restoreなら、練習前の譜面・キーに戻す。
+  function abortPractice(restore: boolean) {
+    const saved = practiceRef.current;
+    practiceRef.current = null;
+    setPracticeStatus("");
+    if (saved && restore) {
+      setMeasures(saved.measures);
+      setRoot(saved.root);
+      setUseFlats(saved.useFlats);
+    }
+  }
+
+  // 現在の譜面を元のキーから順に移調しながら、12キー分を続けて再生する。
+  async function startPractice() {
+    const base = { measures, root, useFlats };
+    if (!measures.some((m) => m.harmonies.length > 0 || m.notes.length > 0)) return;
+    practiceRef.current = base;
+    const order = PRACTICE_ORDERS[practiceMode === "chromatic" ? "chromatic" : "fourths"];
+    const runStep = (k: number) => {
+      if (practiceRef.current !== base) return; // 停止された
+      const shift = order[k];
+      const newRoot = (base.root + shift) % 12;
+      const flats = prefersFlats(newRoot);
+      const transposed = transposeMeasures(base.measures, shift, flats);
+      setMeasures(transposed);
+      setRoot(newRoot);
+      setUseFlats(flats);
+      setPracticeStatus(`Key ${k + 1} / ${order.length}: Do = ${(flats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP)[newRoot]}`);
+      void playScore(transposed, () => {
+        if (practiceRef.current !== base) return;
+        if (k + 1 < order.length) runStep(k + 1);
+        else abortPractice(true);
+      });
+    };
+    runStep(0);
+  }
+
+  async function playScore(score: Measure[], onFinished?: () => void) {
+    const hasContent = score.some((m) => m.notes.length > 0 || m.harmonies.length > 0);
     if (!hasContent) return;
     // 通常はPlayボタンがsamplesReadyになるまで無効化されているため素通りするが、
     // 念のためここでも先読みの完了を待つ。
@@ -938,7 +989,7 @@ export default function StaffToFretboard({
 
     const measureDurationMs = gridToMs(gridsPerMeasure);
     const events: PlaybackEvent[] = [];
-    measures.forEach((m, measureIndex) => {
+    score.forEach((m, measureIndex) => {
       const measureStartMs = measureIndex * measureDurationMs;
       m.notes.forEach((note) => {
         const atMs = measureStartMs + gridToMs(note.startGrid);
@@ -960,7 +1011,7 @@ export default function StaffToFretboard({
     });
     // ウォーキングベース: harmoniesから1拍1音のベースラインを生成し、
     // メロディ・コードハイライトと同じ絶対時間軸に載せる。
-    buildWalkingBassEvents(measures, gridsPerMeasure, timeSig).forEach((be) => {
+    buildWalkingBassEvents(score, gridsPerMeasure, timeSig).forEach((be) => {
       const atMs = gridToMs(be.atGrid);
       const toneSec = gridToMs(be.durationGrid) / 1000;
       const measureIndex = Math.floor(be.atGrid / gridsPerMeasure);
@@ -969,7 +1020,7 @@ export default function StaffToFretboard({
     // ドラム: メロディ・ベースと同じ絶対時間軸（measureDurationMs・QUARTER_NOTE_MS）
     // に載せることで、テンポが変わってもドラムだけ走る/遅れるということが起きない。
     // 現状は4/4のジャズ基本パターンのみ対応（それ以外の拍子では無音）。
-    buildDrumEvents(measures.length, measureDurationMs, QUARTER_NOTE_MS, timeSig).forEach((de) => {
+    buildDrumEvents(score.length, measureDurationMs, QUARTER_NOTE_MS, timeSig).forEach((de) => {
       events.push({ atMs: de.atMs, endMs: de.atMs, measureIndex: de.measureIndex, kind: "drum", voice: de.voice });
     });
     if (events.length === 0) return;
@@ -1018,6 +1069,7 @@ export default function StaffToFretboard({
       setIsPlaying(false);
       setPlayingNoteKey(null);
       setPlayingHarmonyKey(null);
+      onFinished?.();
     }, overallEndMs);
     timeoutIdsRef.current.push(endTimeoutId);
   }
@@ -2433,6 +2485,20 @@ export default function StaffToFretboard({
               Use degrees like 1 3 5 7 9 11 13
             </span>
           )}
+        </div>
+
+        <div className="toolbar-group" data-cap="Practice">
+          <select
+            aria-label="12-key practice"
+            value={practiceMode}
+            disabled={isPlaying}
+            onChange={(e) => setPracticeMode(e.target.value as "off" | "fourths" | "chromatic")}
+          >
+            <option value="off">12 keys: off</option>
+            <option value="fourths">12 keys: up a 4th</option>
+            <option value="chromatic">12 keys: up a semitone</option>
+          </select>
+          {practiceStatus && <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{practiceStatus}</span>}
         </div>
 
         <div className="toolbar-group" data-cap="Key & meter">
