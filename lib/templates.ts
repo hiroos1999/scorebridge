@@ -1,5 +1,4 @@
-import { CHORD_TYPES } from "@/lib/chords";
-import type { Harmony, Measure, Note, TimeSignature } from "@/components/StaffToFretboard";
+import type { Measure, Note, TimeSignature } from "@/components/StaffToFretboard";
 
 // 曲テンプレート（ジャズスタンダードの練習用プリセット）。
 // 「テンプレート」選択UIから読み込むと、measures・root(キー)・useFlats・timeSigを
@@ -31,208 +30,9 @@ function rest(startGrid: number, duration: number): Note {
 // E=4, F=5, Gb/F#=6, G=7, Ab/G#=8, A=9, Bb/A#=10, B=11）。
 const PC = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
 
-// ---- 以下、9曲分のテンプレートを機械的に生成するための共通ヘルパー ----
-// 手作業での書き写しによる音の誤りを避けるため、「各小節のコード構成音を
-// 直前の音に近い段でアルペジオ化する」処理を関数化し、9曲すべてで共用する。
-// （'S Wonderful/I Got Rhythm/But Not for Me/Tea for Twoの4曲は、
-// ユーザーが目視で書き出した実際のメロディ（音名・音価）をnote()/rest()で
-// 手書き変換したものに差し替え済み（harmoniesは以下の生成ロジックのまま）。
-// 残り5曲は引き続きコードトーンのアルペジオ機械生成。）
-
-// rows配列（StaffToFretboard内）のpc並びの複製。rowIdx 0..19 = C6,B5,A5,G5,F5,
-// E5,D5,C5,B4,A4,G4,F4,E4,D4,C4,B3,A3,G3,F3,E3
-const ROW_PCS = [0, 11, 9, 7, 5, 4, 2, 0, 11, 9, 7, 5, 4, 2, 0, 11, 9, 7, 5, 4];
-
-// クロマチックなpc(1,3,6,8,10)を自然音+臨時記号でどう綴るか。
-// StaffToFretboard内のCHROMATIC_SPELLINGテーブルと同じ考え方（flatBase/sharpBase）。
-const CHROMATIC_FLAT_BASE: Record<number, number> = { 1: 2, 3: 4, 6: 7, 8: 9, 10: 11 };
-const CHROMATIC_SHARP_BASE: Record<number, number> = { 1: 0, 3: 2, 6: 5, 8: 7, 10: 9 };
-
-function spellPc(pc: number, useFlats: boolean): { naturalPc: number; accidental: number } {
-  if (CHROMATIC_FLAT_BASE[pc] === undefined) return { naturalPc: pc, accidental: 0 };
-  return useFlats
-    ? { naturalPc: CHROMATIC_FLAT_BASE[pc], accidental: -1 }
-    : { naturalPc: CHROMATIC_SHARP_BASE[pc], accidental: 1 };
-}
-
-// naturalPcを持つ段の中から、preferredRowIdxに最も近いものを選ぶ
-// （メロディが小節をまたいで極端に跳躍しないようにするため）。
-function nearestRowForNaturalPc(naturalPc: number, preferredRowIdx: number): number {
-  let best = 7; // fallback: C5
-  let bestDist = Infinity;
-  for (let i = 0; i < ROW_PCS.length; i++) {
-    if (ROW_PCS[i] !== naturalPc) continue;
-    const dist = Math.abs(i - preferredRowIdx);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
-  }
-  return best;
-}
-
-// ピッチクラスをNoteの{rowIdx, accidental}に変換し、直前の段(preferredRowIdx)を
-// 更新して返す。
-function pitchToRow(pc: number, useFlats: boolean, preferredRowIdx: number) {
-  const { naturalPc, accidental } = spellPc(pc, useFlats);
-  const rowIdx = nearestRowForNaturalPc(naturalPc, preferredRowIdx);
-  return { rowIdx, accidental };
-}
-
-// 1小節分のコード指定。要素が1つなら小節全体、2つなら前半/後半(offsetGrid 0/8)。
-type BarSpec = { root: number; kind: string }[];
-
-// BarSpecの配列から、各小節のharmoniesと「コードトーンをアルペジオ化した」
-// notesを機械的に生成する。奇数小節目/偶数小節目でアルペジオの向き（上行/下行）
-// を交互にして単調にならないようにし、最後の小節だけは、その小節の最初の
-// コードのルート音を全音符で1つだけ置いて締める。
-function buildStandardA(bars: BarSpec[], useFlats: boolean, startRow: number): Measure[] {
-  let preferredRow = startRow;
-  return bars.map((bar, bi) => {
-    const isLast = bi === bars.length - 1;
-    const harmonies: Harmony[] = [];
-    const notes: Note[] = [];
-
-    if (isLast) {
-      const { root, kind } = bar[0];
-      harmonies.push({ offsetGrid: 0, root, kind, inversion: 0 });
-      const { rowIdx, accidental } = pitchToRow(root, useFlats, preferredRow);
-      notes.push(note(0, 16, rowIdx, accidental));
-      preferredRow = rowIdx;
-      return { notes, harmonies };
-    }
-
-    if (bar.length === 1) {
-      const { root, kind } = bar[0];
-      harmonies.push({ offsetGrid: 0, root, kind, inversion: 0 });
-      const intervals = CHORD_TYPES[kind];
-      const order = bi % 2 === 0 ? [0, 1, 2, 3] : [3, 2, 1, 0]; // 上行/下行を交互に
-      for (let i = 0; i < 4; i++) {
-        const pc = (root + intervals[order[i]]) % 12;
-        const { rowIdx, accidental } = pitchToRow(pc, useFlats, preferredRow);
-        notes.push(note(i * 4, 4, rowIdx, accidental));
-        preferredRow = rowIdx;
-      }
-    } else {
-      // 1小節に2コード：前半8グリッド/後半8グリッドに、それぞれ2音ずつ。
-      bar.forEach((c, ci) => {
-        const offsetGrid = ci * 8;
-        harmonies.push({ offsetGrid, root: c.root, kind: c.kind, inversion: 0 });
-        const intervals = CHORD_TYPES[c.kind];
-        for (let i = 0; i < 2; i++) {
-          const pc = (c.root + intervals[i]) % 12;
-          const { rowIdx, accidental } = pitchToRow(pc, useFlats, preferredRow);
-          notes.push(note(offsetGrid + i * 4, 4, rowIdx, accidental));
-          preferredRow = rowIdx;
-        }
-      });
-    }
-    return { notes, harmonies };
-  });
-}
-
-// メロディの初期音域の基準（G4付近）。どの曲もここから最も近い段を辿って始まる。
-const START_ROW = 10;
-
 const FOUR_FOUR: TimeSignature = { numerator: 4, denominator: 4 };
 
-// 以下9曲は、一般的に知られるスタンダードのAセクション進行（8小節）に基づき、
-// buildStandardAでharmoniesとコードトーンのアルペジオ（notesの初期値）を機械生成
-// したもの。原曲メロディの転写ではない。
-// ただしI Got Rhythm/But Not for Me/Tea for Twoの3曲は、ユーザーが目視で
-// 書き出した実際のメロディに基づき、withNotes()でnotesだけを差し替えている
-// （harmoniesはbuildStandardAの生成結果のまま）。
-
-// 2. Body and Soul（Johnny Green, 1930）— Db、ii-V-Iを軸にした進行。
-const BODY_AND_SOUL_BARS: BarSpec[] = [
-  [{ root: PC.Eb, kind: "m7" }],
-  [{ root: PC.Ab, kind: "7" }],
-  [{ root: PC.Db, kind: "maj7" }],
-  [{ root: PC.Db, kind: "maj7" }],
-  [{ root: PC.F, kind: "m7" }],
-  [{ root: PC.Bb, kind: "7" }],
-  [{ root: PC.Eb, kind: "m7" }],
-  [{ root: PC.Ab, kind: "7" }],
-];
-
-// 3. Stardust（Hoagy Carmichael, 1927）— C、I-vi-ii-Vにiv(借用和音)を加えた進行。
-const STARDUST_BARS: BarSpec[] = [
-  [{ root: PC.C, kind: "maj7" }],
-  [{ root: PC.A, kind: "m7" }],
-  [{ root: PC.D, kind: "m7" }],
-  [{ root: PC.G, kind: "7" }],
-  [{ root: PC.C, kind: "maj7" }],
-  [{ root: PC.F, kind: "m7" }],
-  [
-    { root: PC.C, kind: "maj7" },
-    { root: PC.G, kind: "7" },
-  ],
-  [{ root: PC.C, kind: "maj7" }],
-];
-
-// 4. Georgia on My Mind（Hoagy Carmichael, 1930）— F、
-//    relative minorへのセカンダリii-Vを含む進行。
-const GEORGIA_BARS: BarSpec[] = [
-  [{ root: PC.F, kind: "maj7" }],
-  [
-    { root: PC.E, kind: "m7b5" },
-    { root: PC.A, kind: "7" },
-  ],
-  [{ root: PC.D, kind: "m7" }],
-  [{ root: PC.G, kind: "7" }],
-  [{ root: PC.C, kind: "m7" }],
-  [{ root: PC.F, kind: "7" }],
-  [{ root: PC.Bb, kind: "maj7" }],
-  [{ root: PC.F, kind: "maj7" }],
-];
-
-// 5. On the Sunny Side of the Street（Jimmy McHugh, 1930）— F、I-V/ii-ii-V進行。
-const SUNNY_SIDE_BARS: BarSpec[] = [
-  [{ root: PC.F, kind: "maj7" }],
-  [{ root: PC.D, kind: "7" }],
-  [{ root: PC.G, kind: "m7" }],
-  [{ root: PC.C, kind: "7" }],
-  [{ root: PC.F, kind: "maj7" }],
-  [{ root: PC.D, kind: "7" }],
-  [
-    { root: PC.G, kind: "m7" },
-    { root: PC.C, kind: "7" },
-  ],
-  [{ root: PC.F, kind: "maj7" }],
-];
-
-// 7. I Can't Give You Anything But Love（Jimmy McHugh, 1928）— C、
-//    I-iidimを含むスウィング期らしい進行。
-const CANT_GIVE_YOU_BARS: BarSpec[] = [
-  [{ root: PC.C, kind: "maj7" }],
-  [{ root: PC.Eb, kind: "dim" }],
-  [{ root: PC.D, kind: "m7" }],
-  [{ root: PC.G, kind: "7" }],
-  [{ root: PC.C, kind: "maj7" }],
-  [{ root: PC.Eb, kind: "dim" }],
-  [
-    { root: PC.D, kind: "m7" },
-    { root: PC.G, kind: "7" },
-  ],
-  [{ root: PC.C, kind: "maj7" }],
-];
-
-// 8. Bye Bye Blackbird（Ray Henderson, 1926）— F、I-I7-IV-#IVdimの定型進行。
-const BLACKBIRD_BARS: BarSpec[] = [
-  [{ root: PC.F, kind: "maj7" }],
-  [{ root: PC.F, kind: "7" }],
-  [{ root: PC.Bb, kind: "maj7" }],
-  [{ root: PC.B, kind: "dim" }],
-  [{ root: PC.F, kind: "maj7" }],
-  [{ root: PC.D, kind: "7" }],
-  [
-    { root: PC.G, kind: "m7" },
-    { root: PC.C, kind: "7" },
-  ],
-  [{ root: PC.F, kind: "maj7" }],
-];
-
-// 9. Tea for Two（Vincent Youmans, 1924 / パブリックドメイン）— Abのキー、フルコーラス32小節。
+// Tea for Two（Vincent Youmans, 1924 / パブリックドメイン）— Abのキー、フルコーラス32小節。
 //    メロディは原典の楽譜の画像を拡大して、音の高さと長さを1音ずつ読み取って入力したもの。
 //    形式: A(8, 1番かっこ) → B(8) → A(8, 2番かっこ) → C(8)。
 //    コードは一般的な進行（Bbm7-Eb7-Abmaj7-Db7 …）。
@@ -760,60 +560,12 @@ export const TEMPLATES: Template[] = [
     measures: I_GOT_RHYTHM_FULL,
   },
   {
-    id: "body-and-soul-a",
-    label: "Body and Soul — Aセクション (Db, Green)",
-    root: PC.Db,
-    useFlats: true,
-    timeSig: FOUR_FOUR,
-    measures: buildStandardA(BODY_AND_SOUL_BARS, true, START_ROW),
-  },
-  {
-    id: "stardust-a",
-    label: "Stardust — Aセクション (C, Carmichael)",
-    root: PC.C,
-    useFlats: true,
-    timeSig: FOUR_FOUR,
-    measures: buildStandardA(STARDUST_BARS, true, START_ROW),
-  },
-  {
-    id: "georgia-a",
-    label: "Georgia on My Mind — Aセクション (F, Carmichael)",
-    root: PC.F,
-    useFlats: true,
-    timeSig: FOUR_FOUR,
-    measures: buildStandardA(GEORGIA_BARS, true, START_ROW),
-  },
-  {
-    id: "sunny-side-a",
-    label: "On the Sunny Side of the Street — Aセクション (F, McHugh)",
-    root: PC.F,
-    useFlats: true,
-    timeSig: FOUR_FOUR,
-    measures: buildStandardA(SUNNY_SIDE_BARS, true, START_ROW),
-  },
-  {
     id: "but-not-for-me",
     label: "But Not for Me — full chorus (Eb, Gershwin)",
     root: PC.Eb,
     useFlats: true,
     timeSig: FOUR_FOUR,
     measures: BUT_NOT_FOR_ME_FULL,
-  },
-  {
-    id: "cant-give-you-a",
-    label: "I Can't Give You Anything But Love — Aセクション (C, McHugh)",
-    root: PC.C,
-    useFlats: true,
-    timeSig: FOUR_FOUR,
-    measures: buildStandardA(CANT_GIVE_YOU_BARS, true, START_ROW),
-  },
-  {
-    id: "blackbird-a",
-    label: "Bye Bye Blackbird — Aセクション (F, Henderson)",
-    root: PC.F,
-    useFlats: true,
-    timeSig: FOUR_FOUR,
-    measures: buildStandardA(BLACKBIRD_BARS, true, START_ROW),
   },
   {
     id: "tea-for-two",
