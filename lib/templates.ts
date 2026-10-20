@@ -4,8 +4,16 @@ import type { Harmony, Measure, Note, TimeSignature } from "@/components/StaffTo
 // 「テンプレート」選択UIから読み込むと、measures・root(キー)・useFlats・timeSigを
 // 丸ごと差し替える初期値として使われる。読み込み後はStaffToFretboard側の通常の
 // state（自由に編集できるデータ）として扱われ、テンプレート自体は不変のまま残る。
+// melody: 曲のメロディ入り / practice: コードトーン・フレーズ練習用（コード進行にガイドトーン等を当てたもの）
+export type TemplateCategory = "melody" | "practice";
+export const TEMPLATE_CATEGORY_LABELS: Record<TemplateCategory, string> = {
+  melody: "Songs with melody",
+  practice: "Chord-tone practice",
+};
+
 export type Template = {
   id: string;
+  category: TemplateCategory;
   label: string;
   root: number; // キー（ピッチクラス）
   useFlats: boolean;
@@ -715,6 +723,7 @@ function bebop251(key: number, shift: number): Measure[] {
 export const TEMPLATES: Template[] = [
   {
     id: "all-of-me-c",
+    category: "practice",
     label: "All of Me in C — guide-tone melody (3rd / 7th, 2 choruses)",
     root: PC.C,
     useFlats: false,
@@ -723,6 +732,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "joy-spring-f",
+    category: "practice",
     label: "Joy Spring in F — guide-tone melody (3rd / 7th, 2 choruses)",
     root: PC.F,
     useFlats: true,
@@ -731,6 +741,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "softly-cm",
+    category: "practice",
     label: "Softly, as in a Morning Sunrise in Cm — guide-tone melody (3rd / 7th, 2 choruses)",
     root: PC.Eb,
     useFlats: true,
@@ -739,6 +750,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "never-another-you-eb",
+    category: "practice",
     label: "There Will Never Be Another You in Eb — guide-tone melody (3rd / 7th, 2 choruses)",
     root: PC.Eb,
     useFlats: true,
@@ -747,6 +759,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "days-of-wine-and-roses-f",
+    category: "practice",
     label: "The Days of Wine and Roses in F — guide-tone melody (3rd / 7th, 2 choruses)",
     root: PC.F,
     useFlats: true,
@@ -755,6 +768,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "autumn-leaves-g",
+    category: "practice",
     label: "Autumn Leaves in Gm — guide-tone melody (3rd / 7th, 2 choruses)",
     root: PC.Bb,
     useFlats: true,
@@ -763,6 +777,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "jazz-blues-f",
+    category: "practice",
     label: "Jazz blues in F — guide-tone melody (3rd / 7th, 2 choruses)",
     root: PC.F,
     useFlats: true,
@@ -771,6 +786,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "bebop-251-c",
+    category: "practice",
     label: "Bebop ii–V–I lick in C (original)",
     root: PC.C,
     useFlats: true,
@@ -779,6 +795,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "bebop-251-f",
+    category: "practice",
     label: "Bebop ii–V–I lick in F (original)",
     root: PC.F,
     useFlats: true,
@@ -787,6 +804,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "bebop-251-bb",
+    category: "practice",
     label: "Bebop ii–V–I lick in Bb (original)",
     root: PC.Bb,
     useFlats: true,
@@ -795,6 +813,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "yesterdays",
+    category: "melody",
     label: "Yesterdays — full chorus (Dm, Kern)",
     root: PC.F,
     useFlats: true,
@@ -803,6 +822,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "all-the-things",
+    category: "melody",
     label: "All the Things You Are — full chorus (Ab, Kern)",
     root: PC.Ab,
     useFlats: true,
@@ -811,6 +831,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "smoke-gets",
+    category: "melody",
     label: "Smoke Gets in Your Eyes — full chorus (Eb, Kern)",
     root: PC.Eb,
     useFlats: true,
@@ -819,6 +840,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "danny-boy",
+    category: "melody",
     label: "Danny Boy — full chorus (Eb, Londonderry Air)",
     root: PC.Eb,
     useFlats: true,
@@ -827,6 +849,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "summertime",
+    category: "melody",
     label: "Summertime — full chorus (Am, Gershwin)",
     root: PC.C,
     useFlats: false,
@@ -835,6 +858,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "swonderful",
+    category: "melody",
     label: "'S Wonderful — full chorus (Eb, Gershwin)",
     root: PC.Eb,
     useFlats: true,
@@ -843,6 +867,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "rhythm",
+    category: "melody",
     label: "I Got Rhythm — full chorus (Bb, Gershwin)",
     root: PC.Bb,
     useFlats: true,
@@ -851,6 +876,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "but-not-for-me",
+    category: "melody",
     label: "But Not for Me — full chorus (Eb, Gershwin)",
     root: PC.Eb,
     useFlats: true,
@@ -859,6 +885,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "tea-for-two",
+    category: "melody",
     label: "Tea for Two — full chorus (Ab, Youmans)",
     root: PC.Ab,
     useFlats: true,

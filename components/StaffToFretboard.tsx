@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Sparkles, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
-import { TEMPLATES } from "@/lib/templates";
+import { TEMPLATES, TEMPLATE_CATEGORY_LABELS, type TemplateCategory } from "@/lib/templates";
 import { PRACTICE_ORDERS, prefersFlats, transposeMeasures } from "@/lib/transpose";
 import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/patterns";
 import { parseMusicXmlFile } from "@/lib/musicxmlImport";
@@ -2338,10 +2338,14 @@ export default function StaffToFretboard({
             }}
           >
             <option value="">Song templates…</option>
-            {TEMPLATES.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
+            {(Object.keys(TEMPLATE_CATEGORY_LABELS) as TemplateCategory[]).map((cat) => (
+              <optgroup key={cat} label={TEMPLATE_CATEGORY_LABELS[cat]}>
+                {TEMPLATES.filter((t) => t.category === cat).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
 
