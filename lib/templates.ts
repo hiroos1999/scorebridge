@@ -687,6 +687,33 @@ function softlyCm(): Measure[] {
   return twoChoruses(guideToneChorus([...SF_A, ...SF_A, ...SF_B, ...SF_A], 60, 72));
 }
 
+// Fly Me to the Moon（C）32小節 ABAC。メロディは含まない（著作権存続中のため）。
+// コード進行にガイドトーン・ラインを当てた練習用。2コーラス目は1オクターブ上。
+const FM_AM7: BluesChord = [PC.A, "m7", "C", "G"];
+const FM_DM7: BluesChord = [PC.D, "m7", "F", "C"];
+const FM_G7: BluesChord = [PC.G, "7", "B", "F"];
+const FM_CM7: BluesChord = [PC.C, "maj7", "E", "B"];
+const FM_FM7: BluesChord = [PC.F, "maj7", "A", "E"];
+const FM_BM7B5: BluesChord = [PC.B, "m7b5", "D", "A"];
+const FM_E7: BluesChord = [PC.E, "7", "G#", "D"];
+const FM_A7: BluesChord = [PC.A, "7", "C#", "G"];
+const FM_EM7: BluesChord = [PC.E, "m7", "G", "D"];
+const FM_A: [BluesChord, BluesChord][] = [
+  [FM_AM7, FM_AM7], [FM_DM7, FM_DM7], [FM_G7, FM_G7], [FM_CM7, FM_CM7],
+  [FM_FM7, FM_FM7], [FM_BM7B5, FM_BM7B5], [FM_E7, FM_E7], [FM_AM7, FM_A7],
+];
+const FM_B: [BluesChord, BluesChord][] = [
+  [FM_DM7, FM_DM7], [FM_G7, FM_G7], [FM_CM7, FM_CM7], [FM_EM7, FM_A7],
+  [FM_DM7, FM_DM7], [FM_G7, FM_G7], [FM_CM7, FM_CM7], [FM_BM7B5, FM_E7],
+];
+const FM_C: [BluesChord, BluesChord][] = [
+  [FM_DM7, FM_DM7], [FM_G7, FM_G7], [FM_EM7, FM_EM7], [FM_A7, FM_A7],
+  [FM_DM7, FM_DM7], [FM_G7, FM_G7], [FM_CM7, FM_CM7], [FM_BM7B5, FM_E7],
+];
+function flyMeToTheMoonC(): Measure[] {
+  return twoChoruses(guideToneChorus([...FM_A, ...FM_B, ...FM_A, ...FM_C], 60, 72));
+}
+
 function phraseMeasure(
   line: [number, number][],
   shift: number,
@@ -721,6 +748,15 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "fly-me-to-the-moon-c",
+    category: "practice",
+    label: "Fly Me to the Moon in C — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.C,
+    useFlats: false,
+    timeSig: FOUR_FOUR,
+    measures: flyMeToTheMoonC(),
+  },
   {
     id: "all-of-me-c",
     category: "practice",
