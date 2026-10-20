@@ -714,6 +714,32 @@ function flyMeToTheMoonC(): Measure[] {
   return twoChoruses(guideToneChorus([...FM_A, ...FM_B, ...FM_A, ...FM_C], 60, 72));
 }
 
+// The Girl from Ipanema（F）32小節 AABA。メロディは含まない（著作権存続中のため）。
+// コード進行にガイドトーン・ラインを当てた練習用。2コーラス目は1オクターブ上。
+const GI_FM7: BluesChord = [PC.F, "maj7", "A", "E"];
+const GI_G7: BluesChord = [PC.G, "7", "B", "F"];
+const GI_GM7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const GI_GB7: BluesChord = [PC.Gb, "7", "Bb", "Fb"];
+const GI_GBM7: BluesChord = [PC.Gb, "maj7", "Bb", "F"];
+const GI_B7: BluesChord = [PC.B, "7", "D#", "A"];
+const GI_GBMIN7: BluesChord = [PC.Gb, "m7", "A", "E"];
+const GI_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const GI_EB7: BluesChord = [PC.Eb, "7", "G", "Db"];
+const GI_AM7: BluesChord = [PC.A, "m7", "C", "G"];
+const GI_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+const GI_A1: [BluesChord, BluesChord][] = [
+  [GI_FM7, GI_FM7], [GI_FM7, GI_FM7], [GI_G7, GI_G7], [GI_G7, GI_G7],
+  [GI_GM7, GI_GM7], [GI_GB7, GI_GB7], [GI_FM7, GI_FM7], [GI_GB7, GI_GB7],
+];
+const GI_A2: [BluesChord, BluesChord][] = [...GI_A1.slice(0, 7), [GI_FM7, GI_FM7]];
+const GI_B: [BluesChord, BluesChord][] = [
+  [GI_GBM7, GI_GBM7], [GI_B7, GI_B7], [GI_GBMIN7, GI_GBMIN7], [GI_D7, GI_D7],
+  [GI_GM7, GI_GM7], [GI_EB7, GI_EB7], [GI_AM7, GI_D7], [GI_GM7, GI_C7],
+];
+function girlFromIpanemaF(): Measure[] {
+  return twoChoruses(guideToneChorus([...GI_A1, ...GI_A2, ...GI_B, ...GI_A2], 60, 72));
+}
+
 function phraseMeasure(
   line: [number, number][],
   shift: number,
@@ -748,6 +774,15 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "girl-from-ipanema-f",
+    category: "practice",
+    label: "The Girl from Ipanema in F — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.F,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: girlFromIpanemaF(),
+  },
   {
     id: "fly-me-to-the-moon-c",
     category: "practice",
