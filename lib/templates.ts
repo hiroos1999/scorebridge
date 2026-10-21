@@ -906,7 +906,51 @@ function bebop251(key: number, shift: number): Measure[] {
   ];
 }
 
+// いつか王子様が（Bb, 3/4）24小節 A8 B8 C8。ジャズ・スタンダード・バイブルのコード進行。
+// 3/4(12grid): 1小節1コード。3度を2分音符（拍1-2）、7度を4分音符（拍3）に置いたガイドトーン・ライン。
+// 小節数はA(8)+B(8,1番カッコ)+C(8,2番カッコ)。素の「B♭」はBbmaj7、F7sus4は4度(Bb)を3度枠に置いたF7として扱う。
+const SP_BBM7: BluesChord = [PC.Bb, "maj7", "D", "A"];
+const SP_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const SP_EBM7: BluesChord = [PC.Eb, "maj7", "G", "D"];
+const SP_G7: BluesChord = [PC.G, "7", "B", "F"];
+const SP_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
+const SP_F7: BluesChord = [PC.F, "7", "A", "Eb"];
+const SP_DM7: BluesChord = [PC.D, "m7", "F", "C"];
+const SP_DBDIM: BluesChord = [PC.Db, "dim", "E", "A"];
+const SP_FM7: BluesChord = [PC.F, "m7", "Ab", "Eb"];
+const SP_BB7: BluesChord = [PC.Bb, "7", "D", "Ab"];
+const SP_EDIM: BluesChord = [PC.E, "dim", "G", "Db"];
+const SP_FDIM: BluesChord = [PC.F, "dim", "Ab", "D"];
+const SP_F7SUS: BluesChord = [PC.F, "7", "Bb", "Eb"];
+const SOMEDAY_BARS: BluesChord[] = [
+  SP_BBM7, SP_D7, SP_EBM7, SP_G7, SP_CM7, SP_G7, SP_CM7, SP_F7,
+  SP_DM7, SP_DBDIM, SP_CM7, SP_F7, SP_DM7, SP_DBDIM, SP_CM7, SP_F7,
+  SP_FM7, SP_BB7, SP_EBM7, SP_EDIM, SP_BBM7, SP_FDIM, SP_F7SUS, SP_F7,
+];
+function someday(): Measure[] {
+  let prev = 69;
+  const chorus1: Measure[] = SOMEDAY_BARS.map((c) => {
+    const third = guideToneNote(c[2], 0, prev, 8, 60, 72);
+    const seventh = guideToneNote(c[3], 8, third.midi, 4, 60, 72);
+    prev = seventh.midi;
+    return {
+      notes: [third.note, seventh.note],
+      harmonies: [{ offsetGrid: 0, root: c[0], kind: c[1], inversion: 0 }],
+    };
+  });
+  return twoChoruses(chorus1);
+}
+
 export const TEMPLATES: Template[] = [
+  {
+    id: "someday-my-prince-bb",
+    category: "practice",
+    label: "Someday My Prince Will Come (いつか王子様が) in Bb — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.Bb,
+    useFlats: true,
+    timeSig: { numerator: 3, denominator: 4 },
+    measures: someday(),
+  },
   {
     id: "wave-d",
     category: "practice",
