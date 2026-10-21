@@ -807,6 +807,72 @@ function greenDolphinEb(): Measure[] {
   return twoChoruses(guideToneChorus([...GD_A, ...GD_B, ...GD_A, ...GD_C], 60, 72));
 }
 
+// Wave（D）A(12)・A(12, 1番括弧で戻る)・B(8)・A(12) = 44小節。メロディは含まない。
+// 黒本のコード記号に沿ったガイドトーン練習用（イントロは含まない）。2コーラス目は1オクターブ上。
+const WV_DM7: BluesChord = [PC.D, "maj7", "F#", "C#"];
+const WV_BBDIM7: BluesChord = [PC.Bb, "dim", "Db", "G"];
+const WV_AM7: BluesChord = [PC.A, "m7", "C", "G"];
+const WV_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const WV_GM7: BluesChord = [PC.G, "maj7", "B", "F#"];
+const WV_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+const WV_FS7: BluesChord = [PC.Gb, "7", "A#", "E"];
+const WV_B7: BluesChord = [PC.B, "7", "D#", "A"];
+const WV_E7: BluesChord = [PC.E, "7", "G#", "D"];
+const WV_BB7: BluesChord = [PC.Bb, "7", "D", "Ab"];
+const WV_A7: BluesChord = [PC.A, "7", "C#", "G"];
+const WV_DMIN7: BluesChord = [PC.D, "m7", "F", "C"];
+const WV_G7: BluesChord = [PC.G, "7", "B", "F"];
+const WV_GMIN7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const WV_FM7: BluesChord = [PC.F, "maj7", "A", "E"];
+const WV_FMIN7: BluesChord = [PC.F, "m7", "Ab", "Eb"];
+const WV_EBM7: BluesChord = [PC.Eb, "maj7", "G", "D"];
+const WV_A: [BluesChord, BluesChord][] = [
+  [WV_DM7, WV_DM7], [WV_BBDIM7, WV_BBDIM7], [WV_AM7, WV_AM7], [WV_D7, WV_D7],
+  [WV_GM7, WV_GM7], [WV_C7, WV_C7], [WV_FS7, WV_FS7], [WV_B7, WV_B7],
+  [WV_E7, WV_E7], [WV_BB7, WV_A7], [WV_DMIN7, WV_G7], [WV_DMIN7, WV_G7],
+];
+const WV_B: [BluesChord, BluesChord][] = [
+  [WV_GMIN7, WV_GMIN7], [WV_C7, WV_C7], [WV_FM7, WV_FM7], [WV_FM7, WV_FM7],
+  [WV_FMIN7, WV_FMIN7], [WV_BB7, WV_BB7], [WV_EBM7, WV_EBM7], [WV_A7, WV_A7],
+];
+function waveD(): Measure[] {
+  return twoChoruses(guideToneChorus([...WV_A, ...WV_A, ...WV_B, ...WV_A], 60, 72));
+}
+
+// Água de Beber（Cm）32小節 = テーマ(8) + A(8) + B(16)。メロディは含まない。
+// 黒本のコード記号に沿ったガイドトーン練習用（スラッシュコードは分子側のコードで作成）。
+// 2コーラス目は1オクターブ上。
+const AB_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
+const AB_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const AB_G7: BluesChord = [PC.G, "7", "B", "F"];
+const AB_ABM7: BluesChord = [PC.Ab, "maj7", "C", "G"];
+const AB_F7: BluesChord = [PC.F, "7", "A", "Eb"];
+const AB_FM7: BluesChord = [PC.F, "m7", "Ab", "Eb"];
+const AB_BB7: BluesChord = [PC.Bb, "7", "D", "Ab"];
+const AB_EBM7: BluesChord = [PC.Eb, "maj7", "G", "D"];
+const AB_DBM7: BluesChord = [PC.Db, "maj7", "F", "C"];
+const AB_DB7: BluesChord = [PC.Db, "7", "F", "Cb"];
+const AB_B7: BluesChord = [PC.B, "7", "D#", "A"];
+const AB_BBMIN7: BluesChord = [PC.Bb, "m7", "Db", "Ab"];
+const AB_DMIN7: BluesChord = [PC.D, "m7", "F", "C"];
+const AB_HEAD: [BluesChord, BluesChord][] = [
+  [AB_CM7, AB_CM7], [AB_D7, AB_G7], [AB_CM7, AB_CM7], [AB_D7, AB_G7],
+  [AB_CM7, AB_CM7], [AB_ABM7, AB_ABM7], [AB_CM7, AB_CM7], [AB_G7, AB_G7],
+];
+const AB_A: [BluesChord, BluesChord][] = [
+  [AB_D7, AB_D7], [AB_G7, AB_G7], [AB_CM7, AB_CM7], [AB_F7, AB_F7],
+  [AB_FM7, AB_FM7], [AB_BB7, AB_BB7], [AB_EBM7, AB_EBM7], [AB_DBM7, AB_DBM7],
+];
+const AB_B: [BluesChord, BluesChord][] = [
+  [AB_D7, AB_DB7], [AB_CM7, AB_B7], [AB_BBMIN7, AB_BBMIN7], [AB_F7, AB_F7],
+  [AB_D7, AB_D7], [AB_DMIN7, AB_DMIN7], [AB_CM7, AB_CM7], [AB_CM7, AB_CM7],
+  [AB_F7, AB_F7], [AB_FM7, AB_FM7], [AB_CM7, AB_CM7], [AB_CM7, AB_CM7],
+  [AB_F7, AB_F7], [AB_FM7, AB_FM7], [AB_CM7, AB_CM7], [AB_G7, AB_G7],
+];
+function aguaDeBeberCm(): Measure[] {
+  return twoChoruses(guideToneChorus([...AB_HEAD, ...AB_A, ...AB_B], 60, 72));
+}
+
 function phraseMeasure(
   line: [number, number][],
   shift: number,
@@ -841,6 +907,24 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "wave-d",
+    category: "practice",
+    label: "Wave in D — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.D,
+    useFlats: false,
+    timeSig: FOUR_FOUR,
+    measures: waveD(),
+  },
+  {
+    id: "agua-de-beber-cm",
+    category: "practice",
+    label: "Água de Beber (おいしい水) in Cm — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.Eb,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: aguaDeBeberCm(),
+  },
   {
     id: "just-friends-f",
     category: "practice",
