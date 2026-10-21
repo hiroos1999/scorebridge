@@ -740,6 +740,73 @@ function girlFromIpanemaF(): Measure[] {
   return twoChoruses(guideToneChorus([...GI_A1, ...GI_A2, ...GI_B, ...GI_A2], 60, 72));
 }
 
+// Just Friends（F）32小節 ABAC（1番括弧=B / 2番括弧=C）。メロディは含まない。
+// 黒本のコード記号に沿ったガイドトーン練習用。2コーラス目は1オクターブ上。
+const JF_BBM7: BluesChord = [PC.Bb, "maj7", "D", "A"];
+const JF_BBMIN7: BluesChord = [PC.Bb, "m7", "Db", "Ab"];
+const JF_EB7: BluesChord = [PC.Eb, "7", "G", "Db"];
+const JF_FM7: BluesChord = [PC.F, "maj7", "A", "E"];
+const JF_ABM7: BluesChord = [PC.Ab, "m7", "Cb", "Gb"];
+const JF_DB7: BluesChord = [PC.Db, "7", "F", "Cb"];
+const JF_GM7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const JF_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+const JF_AM7: BluesChord = [PC.A, "m7", "C", "G"];
+const JF_DM7: BluesChord = [PC.D, "m7", "F", "C"];
+const JF_G7: BluesChord = [PC.G, "7", "B", "F"];
+const JF_B7: BluesChord = [PC.B, "7", "D#", "A"];
+const JF_F6: BluesChord = [PC.F, "6", "A", "D"];
+const JF_A: [BluesChord, BluesChord][] = [
+  [JF_BBM7, JF_BBM7], [JF_BBM7, JF_BBM7], [JF_BBMIN7, JF_BBMIN7], [JF_EB7, JF_EB7],
+  [JF_FM7, JF_FM7], [JF_FM7, JF_FM7], [JF_ABM7, JF_ABM7], [JF_DB7, JF_DB7],
+];
+const JF_B: [BluesChord, BluesChord][] = [
+  [JF_GM7, JF_GM7], [JF_C7, JF_C7], [JF_AM7, JF_AM7], [JF_DM7, JF_DM7],
+  [JF_G7, JF_G7], [JF_G7, JF_G7], [JF_GM7, JF_GM7], [JF_C7, JF_B7],
+];
+const JF_C: [BluesChord, BluesChord][] = [
+  [JF_GM7, JF_GM7], [JF_C7, JF_C7], [JF_AM7, JF_AM7], [JF_DM7, JF_DM7],
+  [JF_G7, JF_G7], [JF_GM7, JF_C7], [JF_F6, JF_F6], [JF_GM7, JF_C7],
+];
+function justFriendsF(): Measure[] {
+  return twoChoruses(guideToneChorus([...JF_A, ...JF_B, ...JF_A, ...JF_C], 60, 72));
+}
+
+// On Green Dolphin Street（Eb）32小節 ABAC（1番括弧=B / 2番括弧=C、Cはソロ中の8小節版）。
+// メロディは含まない。黒本のコード記号に沿ったガイドトーン練習用（スラッシュコードは
+// 分子側のコードで作成。ベース音の指定はしない）。2コーラス目は1オクターブ上。
+const GD_EB: BluesChord = [PC.Eb, "maj7", "G", "D"];
+const GD_GBM7: BluesChord = [PC.Gb, "maj7", "Bb", "F"];
+const GD_F7: BluesChord = [PC.F, "7", "A", "Eb"];
+const GD_EM7: BluesChord = [PC.E, "maj7", "G#", "D#"];
+const GD_GM7B5: BluesChord = [PC.G, "m7b5", "Bb", "F"];
+const GD_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+const GD_FM7: BluesChord = [PC.F, "m7", "Ab", "Eb"];
+const GD_BB7: BluesChord = [PC.Bb, "7", "D", "Ab"];
+const GD_ABM7: BluesChord = [PC.Ab, "m7", "Cb", "Gb"];
+const GD_DB7: BluesChord = [PC.Db, "7", "F", "Cb"];
+const GD_DM7B5: BluesChord = [PC.D, "m7b5", "F", "C"];
+const GD_G7: BluesChord = [PC.G, "7", "B", "F"];
+const GD_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
+const GD_AM7B5: BluesChord = [PC.A, "m7b5", "C", "G"];
+const GD_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const GD_GM7: BluesChord = [PC.G, "m7", "Bb", "F"];
+const GD_EB6: BluesChord = [PC.Eb, "6", "G", "C"];
+const GD_A: [BluesChord, BluesChord][] = [
+  [GD_EB, GD_EB], [GD_EB, GD_EB], [GD_GBM7, GD_GBM7], [GD_GBM7, GD_GBM7],
+  [GD_F7, GD_F7], [GD_EM7, GD_EM7], [GD_EB, GD_EB], [GD_GM7B5, GD_C7],
+];
+const GD_B: [BluesChord, BluesChord][] = [
+  [GD_FM7, GD_FM7], [GD_BB7, GD_BB7], [GD_EB, GD_EB], [GD_EB, GD_EB],
+  [GD_ABM7, GD_ABM7], [GD_DB7, GD_DB7], [GD_GBM7, GD_GBM7], [GD_FM7, GD_BB7],
+];
+const GD_C: [BluesChord, BluesChord][] = [
+  [GD_FM7, GD_FM7], [GD_DM7B5, GD_G7], [GD_CM7, GD_CM7], [GD_AM7B5, GD_D7],
+  [GD_GM7, GD_C7], [GD_FM7, GD_BB7], [GD_EB6, GD_EB6], [GD_EB6, GD_EB6],
+];
+function greenDolphinEb(): Measure[] {
+  return twoChoruses(guideToneChorus([...GD_A, ...GD_B, ...GD_A, ...GD_C], 60, 72));
+}
+
 function phraseMeasure(
   line: [number, number][],
   shift: number,
@@ -774,6 +841,24 @@ function bebop251(key: number, shift: number): Measure[] {
 }
 
 export const TEMPLATES: Template[] = [
+  {
+    id: "just-friends-f",
+    category: "practice",
+    label: "Just Friends in F — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.F,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: justFriendsF(),
+  },
+  {
+    id: "green-dolphin-eb",
+    category: "practice",
+    label: "On Green Dolphin Street in Eb — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.Eb,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: greenDolphinEb(),
+  },
   {
     id: "girl-from-ipanema-f",
     category: "practice",
