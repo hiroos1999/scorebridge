@@ -420,7 +420,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   const BAR_W = 390;
   const LEFT_X = 160;
   const NH_FS = 72; // 符頭のフォントサイズ(Chord tones と同じ 80×0.9)
-  const NH_HALF = 0.59 * NH_FS * 0.25 * 1.7; // 符頭の半幅(1.18スペース÷2)
+  const NH_HALF = (1.18 * NH_FS) / 8; // 符頭の半幅(符頭の幅1.18スペース÷2)
   const STEM_LEN = 63;
   const xOf = (barIdx: 0 | 1, beat: number) => LEFT_X + barIdx * BAR_W + 26 + (beat / barBeats) * (BAR_W - 52);
   const letters = useFlats ? FLAT_LETTER : SHARP_LETTER;
@@ -477,7 +477,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           <text x={p.x} y={p.y} fontSize={NH_FS} fontFamily="Bravura" textAnchor="middle" fill={fill}>
             {g(0xe0a4)}
           </text>
-          <line x1={sx} x2={sx} y1={p.y} y2={tipY} stroke="var(--text-primary)" strokeWidth={1.5} />
+          <line x1={sx} x2={sx} y1={p.y + (down ? 3 : -3)} y2={tipY} stroke="var(--text-primary)" strokeWidth={1.5} />
           {p.acc !== 0 && (
             <text x={p.x - NH_HALF - 12} y={p.y} fontSize={44} fontFamily="Bravura" textAnchor="middle" fill="var(--text-primary)">
               {g(p.acc > 0 ? 0xe262 : 0xe260)}
@@ -515,9 +515,9 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
       const tipY = down ? Math.max(...gr.map((k) => pts[k].y)) + STEM_LEN : Math.min(...gr.map((k) => pts[k].y)) - STEM_LEN;
       const x1 = stemX(gr[0], down) - 0.75;
       const x2 = stemX(gr[gr.length - 1], down) + 0.75;
-      const by = (n: number) => (down ? tipY - 5 - n * 9 : tipY - 5 + n * 9 + 0);
+      const by = (n: number) => (down ? tipY - 8 - n * 12 : tipY + n * 12);
       out.push(<rect key={`b${barIdx}-${gi}`} x={x1} y={by(0)} width={x2 - x1} height={8} fill="var(--text-primary)" opacity={op} />);
-      if (gr.every((i) => pts[i].ev.dur <= 0.26)) out.push(<rect key={`b2${barIdx}-${gi}`} x={x1} y={by(1) + (down ? -3 : 0)} width={x2 - x1} height={8} fill="var(--text-primary)" opacity={op} />);
+      if (gr.every((i) => pts[i].ev.dur <= 0.26)) out.push(<rect key={`b2${barIdx}-${gi}`} x={x1} y={by(1)} width={x2 - x1} height={8} fill="var(--text-primary)" opacity={op} />);
       if (gr.length === 3 && gr.every((i) => Math.abs(pts[i].ev.dur - T3) < 0.02)) {
         const bx = down ? tipY + 12 : tipY - 14;
         const dirY = down ? 8 : -8;
