@@ -60,7 +60,9 @@ const EPS = 1e-6;
 // 開放弦(1弦=E4 … 6弦=E2)のMIDIノート番号
 const OPEN_MIDI = [64, 59, 55, 50, 45, 40];
 const FRETS = 12;
-const TARGET_STRINGS = 4; // 出題は1〜4弦のみ
+const TARGET_STRINGS = 6; // 出題は全弦・開放弦〜12フレット
+const MIDI_LO = 48; // 出題する音域(五線に収まるよう C3〜C5 のギター音)
+const MIDI_HI = 72;
 
 const SHARP_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const FLAT_NAMES = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
@@ -82,9 +84,10 @@ function pickPos(pc: number, prev: Pos): Pos {
   let best: Pos | null = null;
   let bestCost = Infinity;
   for (let s = 0; s < TARGET_STRINGS; s++) {
-    for (let f = 1; f <= FRETS; f++) {
-      if (mod12(OPEN_MIDI[s] + f) !== pc) continue;
-      const cost = Math.abs(s - prev.s) * 2 + Math.abs(f - prev.f);
+    for (let f = 0; f <= FRETS; f++) {
+      const m = OPEN_MIDI[s] + f;
+      if (mod12(m) !== pc || m < MIDI_LO || m > MIDI_HI) continue;
+      const cost = Math.abs(s - prev.s) * 2 + Math.abs(f - prev.f) + Math.abs(m - (OPEN_MIDI[prev.s] + prev.f)) * 0.6;
       if (cost < bestCost) {
         bestCost = cost;
         best = { s, f };
@@ -154,9 +157,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
         const pos = pickPos(pc, prevPosRef.current);
         prevPosRef.current = pos;
         const midi = OPEN_MIDI[pos.s] + pos.f;
-        let written = midi + 12;
-        while (written > 79) written -= 12;
-        while (written < 60) written += 12;
+        const written = midi + 12; // 記譜はギターの実音の1オクターブ上
         const next = idx + 1 < beats.length ? beats[idx + 1] : bb;
         return { beat, dur: next - beat, pos, pc, midi, written, degree: DEGREE_BY_INTERVAL[iv] ?? "" };
       });
@@ -323,7 +324,8 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   }, [kind, tempo, barBeats, chordsPerBar, rounds]);
 
   // --- 指板のタップ ---
-  const FB = { w: 940, h: 214, left: 104, fretW: 68, top: 34, gap: 28 };
+  const FB = { w: 940, h: 214, left: 124, fretW: 66, top: 34, gap: 28 };
+  const fx = (f: number) => (f === 0 ? FB.left - 20 : FB.left + f * FB.fretW - FB.fretW / 2);
   function onFretboardPointerDown(e: React.PointerEvent<SVGSVGElement>) {
     const ctx = ctxRef.current;
     if (!ctx || !running) return;
@@ -364,7 +366,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
     const ms = Math.round(bestDelta * 1000);
     const ev = bestEv as PlanEvent;
     let verdict: Verdict;
-    if (mod12(midi) !== ev.pc) verdict = "wrong";
+    if (midi !== ev.midi) verdict = "wrong";
     else if (Math.abs(ms) <= ON_TIME_MS) verdict = "on";
     else verdict = ms < 0 ? "early" : "late";
     setResult(bestKey, { verdict, ms });
@@ -720,7 +722,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             {OPEN_MIDI.map((_, s) => (
               <g key={s}>
                 <line x1={FB.left} x2={FB.left + FRETS * FB.fretW} y1={FB.top + s * FB.gap} y2={FB.top + s * FB.gap} stroke="#cfc8b8" strokeOpacity={0.75} strokeWidth={0.8 + s * 0.35} />
-                <text x={FB.left - 12} y={FB.top + s * FB.gap + 4} textAnchor="end" fontSize={12} fill="var(--text-secondary)">
+                <text x={FB.left - 40} y={FB.top + s * FB.gap + 4} textAnchor="end" fontSize={12} fill="var(--text-secondary)">
                   {`String ${s + 1} · ${["E", "B", "G", "D", "A", "E"][s]}`}
                 </text>
               </g>
@@ -733,11 +735,12 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
                 const role = (iv: number) => (iv === 0 ? "danger" : iv === 3 || iv === 4 ? "warning" : iv === 6 || iv === 7 || iv === 10 || iv === 11 ? "success" : "pro");
                 const dots: React.ReactNode[] = [];
                 for (let s = 0; s < TARGET_STRINGS; s++) {
-                  for (let f = 1; f <= FRETS; f++) {
+                  for (let f = 0; f <= FRETS; f++) {
+                    if (OPEN_MIDI[s] + f < MIDI_LO || OPEN_MIDI[s] + f > MIDI_HI) continue;
                     const iv = intervals.find((v) => mod12(leftPlan.chordRoot + v) === mod12(OPEN_MIDI[s] + f));
                     if (iv === undefined) continue;
                     const r = role(iv);
-                    const cx = FB.left + f * FB.fretW - FB.fretW / 2;
+                    const cx = fx(f);
                     const cy = FB.top + s * FB.gap;
                     dots.push(
                       <g key={`${s}-${f}`} opacity={0.7}>
@@ -754,11 +757,11 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             {/* 次の目標: 同じ音(ピッチクラス)が指板上のどこにあっても、全部光らせる */}
             {running && target && (
               <g>
-                {OPEN_MIDI.slice(0, TARGET_STRINGS).flatMap((open, s) =>
-                  Array.from({ length: FRETS }, (_, i) => i + 1)
-                    .filter((f) => mod12(open + f) === target.ev.pc)
+                {OPEN_MIDI.flatMap((open, s) =>
+                  Array.from({ length: FRETS + 1 }, (_, i) => i)
+                    .filter((f) => open + f === target.ev.midi)
                     .map((f) => {
-                      const cx = FB.left + f * FB.fretW - FB.fretW / 2;
+                      const cx = fx(f);
                       const cy = FB.top + s * FB.gap;
                       return (
                         <g key={`t${s}-${f}`}>
@@ -775,8 +778,8 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
               </g>
             )}
             {/* 直前のタップ位置 */}
-            {lastTap && lastTap.f > 0 && (
-              <circle cx={FB.left + lastTap.f * FB.fretW - FB.fretW / 2} cy={FB.top + lastTap.s * FB.gap} r={16} fill="none" stroke={verdictColor[lastTap.verdict]} strokeWidth={4} />
+            {lastTap && (
+              <circle cx={fx(lastTap.f)} cy={FB.top + lastTap.s * FB.gap} r={16} fill="none" stroke={verdictColor[lastTap.verdict]} strokeWidth={4} />
             )}
           </svg>
         </div>
@@ -793,7 +796,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             </span>
           ))}
         </div>
-        <div id="legend">Notes come from the chord tones of the current bar (strings 1–4). Any fret with the right note counts.</div>
+        <div id="legend">Notes come from the chord tones of the current bar. Tap the exact pitch: the same note at another octave does not count.</div>
       </section>
     </>
   );
