@@ -99,12 +99,16 @@ function freq(midi: number) {
 }
 
 export default function RhythmPractice({ measures, chordRoot, chordType, useFlats, timeSig }: Props) {
-  const [kind, setKind] = useState<RhythmKind>("triplet");
-  const [tempo, setTempo] = useState(80);
+  const [kind, setKind] = useState<RhythmKind>("8th");
+  const [tempo, setTempo] = useState(70);
   const [countIn, setCountIn] = useState(true);
   const [running, setRunning] = useState(false);
   const [nowT, setNowT] = useState(0);
   const [rounds, setRounds] = useState(8);
+  const [guide, setGuide] = useState(true);
+  const guideRef = useRef(true);
+  guideRef.current = guide;
+  const guidedRef = useRef<Set<string>>(new Set());
   const [finished, setFinished] = useState(false);
   const roundsRef = useRef(8);
   roundsRef.current = rounds;
@@ -183,16 +187,16 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
     osc.stop(time + 0.06);
   }
 
-  function tone(midi: number) {
+  function tone(midi: number, at?: number, soft = false) {
     const ctx = ctxRef.current;
     if (!ctx) return;
-    const t = ctx.currentTime;
+    const t = at ?? ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = "triangle";
+    osc.type = soft ? "sine" : "triangle";
     osc.frequency.value = freq(midi);
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.35, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(soft ? 0.28 : 0.35, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
     osc.connect(gain).connect(ctx.destination);
     osc.start(t);
@@ -225,6 +229,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
     prevPosRef.current = { s: 2, f: 5 };
     degreeCursorRef.current = 1;
     resultsRef.current = {};
+    guidedRef.current = new Set();
     setResults({});
     setLastTap(null);
     setFinished(false);
@@ -241,6 +246,22 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
         const accent = mod12(k) % 1 === 0 && ((k % barBeats) + barBeats) % barBeats === 0;
         click(t0Ref.current + k * beatDurRef.current, accent);
         nextClickRef.current = k + 1;
+      }
+      // お手本の音: 正解の音を、正解のタイミングで鳴らす
+      if (guideRef.current) {
+        const bpos = (c.currentTime - t0Ref.current) / beatDurRef.current;
+        const cb = Math.max(0, Math.floor(bpos / barBeats));
+        for (let b = cb; b <= Math.min(cb + 1, roundsRef.current - 1); b++) {
+          ensurePlan(b);
+          planRef.current[b].events.forEach((ev, i) => {
+            const key = `${b}:${i}`;
+            const T = t0Ref.current + (b * barBeats + ev.beat) * beatDurRef.current;
+            if (!guidedRef.current.has(key) && T < c.currentTime + 0.12 && T > c.currentTime - 0.05) {
+              guidedRef.current.add(key);
+              tone(ev.midi, Math.max(T, c.currentTime), true);
+            }
+          });
+        }
       }
     }, 25);
 
@@ -540,6 +561,11 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             +
           </button>
         </div>
+        <div className="toolbar-group" data-cap="Guide sound">
+          <button type="button" aria-pressed={guide} style={{ minWidth: 64, color: guide ? "var(--accent)" : "var(--text-secondary)", fontWeight: 700 }} onClick={() => setGuide((v) => !v)}>
+            {guide ? "On" : "Off"}
+          </button>
+        </div>
         <div className="toolbar-group" data-cap="Count-in">
           <button type="button" aria-pressed={countIn} style={{ minWidth: 64, color: countIn ? "var(--accent)" : "var(--text-secondary)", fontWeight: 700 }} onClick={() => setCountIn((v) => !v)}>
             {countIn ? "1 bar" : "Off"}
@@ -617,7 +643,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           {running && rightPlan && renderBar(rightPlan, 1, curBar + 2)}
           {!running && (
             <text x={LEFT_X + 20} y={STAFF_BOTTOM - 20} fontSize={16} fill="#6c6455">
-              Press Start. Tap the glowing dot on the fretboard on each beat.
+              Press Start. You hear the right note on each beat; tap the glowing dot with it.
             </text>
           )}
           {playheadBeat !== null && <rect x={xOf(0, playheadBeat) - 2} y={44} width={4} height={150} rx={2} fill="#b8942f" />}
