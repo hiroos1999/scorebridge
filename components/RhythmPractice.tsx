@@ -323,7 +323,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   }, [kind, tempo, barBeats, chordsPerBar, rounds]);
 
   // --- 指板のタップ ---
-  const FB = { w: 780, h: 214, left: 70, fretW: 58, top: 34, gap: 28 };
+  const FB = { w: 940, h: 214, left: 104, fretW: 68, top: 34, gap: 28 };
   function onFretboardPointerDown(e: React.PointerEvent<SVGSVGElement>) {
     const ctx = ctxRef.current;
     if (!ctx || !running) return;
@@ -412,20 +412,28 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   const names = useFlats ? FLAT_NAMES : SHARP_NAMES;
   const chordLabel = (root: number, k: string) => `${names[mod12(root)]}${k === "dim" ? "dim" : k === "m7b5" ? "m7♭5" : k === "mMaj7" ? "m(maj7)" : k}`;
 
-  // 五線譜のジオメトリ
-  const BAR_W = 316;
-  const LEFT_X = 130;
-  const STAFF_BOTTOM = 134;
-  const HALF = 7;
-  const xOf = (barIdx: 0 | 1, beat: number) => LEFT_X + barIdx * BAR_W + 18 + (beat / barBeats) * (BAR_W - 36);
+  // 五線譜のジオメトリ(Chord tones の五線譜と同じ: 線間隔20、Bravura フォント、同じ配色)
+  const STAFF_TOP = 100;
+  const STAFF_BOT = STAFF_TOP + 80;
+  const HALF = 10;
+  const VB_W = 940;
+  const BAR_W = 390;
+  const LEFT_X = 160;
+  const NH_FS = 72; // 符頭のフォントサイズ(Chord tones と同じ 80×0.9)
+  const NH_HALF = 0.59 * NH_FS * 0.25 * 1.7; // 符頭の半幅(1.18スペース÷2)
+  const STEM_LEN = 63;
+  const xOf = (barIdx: 0 | 1, beat: number) => LEFT_X + barIdx * BAR_W + 26 + (beat / barBeats) * (BAR_W - 52);
   const letters = useFlats ? FLAT_LETTER : SHARP_LETTER;
   const accs = useFlats ? FLAT_ACC : SHARP_ACC;
   function staffPos(written: number) {
     const pc = mod12(written);
     const octave = Math.floor(written / 12) - 1;
     const d = octave * 7 + letters[pc];
-    return { d, y: STAFF_BOTTOM - (d - 30) * HALF, acc: accs[pc] };
+    return { d, y: STAFF_BOT - (d - 30) * HALF, acc: accs[pc] };
   }
+  const g = (cp: number) => String.fromCodePoint(cp);
+  const TS = [0xe080, 0xe081, 0xe082, 0xe083, 0xe084, 0xe085, 0xe086, 0xe087, 0xe088, 0xe089];
+  const timeSigStr = (n: number) => String(n).split("").map((c) => g(TS[Number(c)])).join("");
 
   const verdictColor: Record<Verdict, string> = { on: "#0E7C66", early: "#B4530A", late: "#6A3FB5", wrong: "#C0392B", miss: "#8A8376" };
   const verdictText: Record<Verdict, string> = { on: "On time", early: "Early", late: "Late", wrong: "Wrong note", miss: "Missed" };
@@ -433,105 +441,108 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   function renderBar(plan: PlanBar | undefined, barIdx: 0 | 1, barNo: number) {
     if (!plan) return null;
     const dim = barIdx === 1;
+    const op = dim ? 0.4 : 1;
     const out: React.ReactNode[] = [];
-    const evs = plan.events;
-    const pts = evs.map((ev) => {
-      const sp = staffPos(ev.written);
-      return { ev, x: xOf(barIdx, ev.beat), ...sp };
-    });
-    // ledger lines
+    const pts = plan.events.map((ev) => ({ ev, x: xOf(barIdx, ev.beat), ...staffPos(ev.written) }));
+    // 加線
     pts.forEach((p, i) => {
-      for (let d = p.d <= 28 ? 28 : 40; p.d <= 28 ? d >= p.d : d <= p.d; d += p.d <= 28 ? -2 : 2) {
-        const ly = STAFF_BOTTOM - (d - 30) * HALF;
-        out.push(<line key={`l${barIdx}-${i}-${d}`} x1={p.x - 12} x2={p.x + 12} y1={ly} y2={ly} stroke="#2a2721" strokeWidth={1.4} opacity={dim ? 0.35 : 1} />);
-      }
+      const lines: number[] = [];
+      if (p.y > STAFF_BOT) for (let y = STAFF_BOT + 20; y <= p.y + 0.1; y += 20) lines.push(y);
+      if (p.y < STAFF_TOP) for (let y = STAFF_TOP - 20; y >= p.y - 0.1; y -= 20) lines.push(y);
+      lines.forEach((y) => out.push(<line key={`l${barIdx}-${i}-${y}`} x1={p.x - NH_HALF - 6} x2={p.x + NH_HALF + 6} y1={y} y2={y} stroke="var(--text-primary)" strokeWidth={1.5} opacity={op} />));
     });
-    // beams: 同じ拍の中で、4分音符より短い音をまとめる
+    // 連桁グループ: 同じ拍の中の、4分音符より短い音
     const groups: number[][] = [];
     pts.forEach((p, i) => {
       if (p.ev.dur >= 1 - EPS) return;
-      const g = groups[groups.length - 1];
-      if (g && Math.floor(pts[g[0]].ev.beat + EPS) === Math.floor(p.ev.beat + EPS)) g.push(i);
+      const last = groups[groups.length - 1];
+      if (last && Math.floor(pts[last[0]].ev.beat + EPS) === Math.floor(p.ev.beat + EPS)) last.push(i);
       else groups.push([i]);
     });
-    const beamTop: Record<number, number> = {};
-    groups.forEach((g) => {
-      const top = Math.min(...g.map((i) => pts[i].y)) - 36;
-      g.forEach((i) => (beamTop[i] = top));
-    });
+    const inGroup: Record<number, number[]> = {};
+    groups.forEach((gr) => gr.forEach((i) => (inGroup[i] = gr)));
+    const MID = STAFF_TOP + 40;
+    const stemsDownOf = (idxs: number[]) => idxs.reduce((a, i) => a + Math.abs(pts[i].y - MID), 0) > 0 && idxs.reduce((a, i) => a + (pts[i].y - MID), 0) / idxs.length < 0;
+    const stemX = (i: number, down: boolean) => pts[i].x + (down ? -NH_HALF : NH_HALF);
     pts.forEach((p, i) => {
+      const gr = inGroup[i] ?? [i];
+      const down = stemsDownOf(gr);
       const key = `${barIdx === 0 ? curBar : curBar + 1}:${i}`;
       const res = results[key];
-      const fill = res ? verdictColor[res.verdict] : "#2a2721";
-      const stemTop = beamTop[i] ?? p.y - 36;
-      const op = dim ? 0.35 : 1;
+      const fill = res ? verdictColor[res.verdict] : "var(--text-primary)";
+      const tipY = gr.length > 1 ? (down ? Math.max(...gr.map((k) => pts[k].y)) + STEM_LEN : Math.min(...gr.map((k) => pts[k].y)) - STEM_LEN) : down ? p.y + STEM_LEN : p.y - STEM_LEN;
+      const sx = stemX(i, down);
       out.push(
         <g key={`n${barIdx}-${i}`} opacity={op}>
-          <ellipse cx={p.x} cy={p.y} rx={8.5} ry={6.4} transform={`rotate(-20 ${p.x} ${p.y})`} fill={fill} />
-          <line x1={p.x + 8} x2={p.x + 8} y1={p.y - 2} y2={stemTop} stroke="#2a2721" strokeWidth={2.2} />
+          <text x={p.x} y={p.y} fontSize={NH_FS} fontFamily="Bravura" textAnchor="middle" fill={fill}>
+            {g(0xe0a4)}
+          </text>
+          <line x1={sx} x2={sx} y1={p.y} y2={tipY} stroke="var(--text-primary)" strokeWidth={1.5} />
           {p.acc !== 0 && (
-            <text x={p.x - 22} y={p.y + 6} fontSize={20} fill="#2a2721" fontFamily="serif">
-              {p.acc > 0 ? "♯" : "♭"}
+            <text x={p.x - NH_HALF - 12} y={p.y} fontSize={44} fontFamily="Bravura" textAnchor="middle" fill="var(--text-primary)">
+              {g(p.acc > 0 ? 0xe262 : 0xe260)}
             </text>
           )}
           {!dim && (
-            <text x={p.x} y={170} fontSize={13} fontWeight={700} textAnchor="middle" fill="#8A6A0E">
+            <text x={p.x} y={STAFF_BOT + 52} fontSize={14} fontWeight={700} textAnchor="middle" fill="var(--warning)">
               {p.ev.degree}
             </text>
           )}
           {!dim && res && res.verdict !== "miss" && (
-            <text x={p.x} y={190} fontSize={13} fontWeight={700} textAnchor="middle" fill={verdictColor[res.verdict]}>
+            <text x={p.x} y={STAFF_BOT + 72} fontSize={13} fontWeight={700} textAnchor="middle" fill={verdictColor[res.verdict]}>
               {res.verdict === "wrong" ? "×" : res.ms > 0 ? `+${res.ms}` : `${res.ms}`}
             </text>
           )}
           {!dim && res && res.verdict === "miss" && (
-            <text x={p.x} y={190} fontSize={12} textAnchor="middle" fill={verdictColor.miss}>
+            <text x={p.x} y={STAFF_BOT + 72} fontSize={12} textAnchor="middle" fill={verdictColor.miss}>
               –
             </text>
           )}
         </g>
       );
+      // 単独の8分・16分音符には旗
+      if (gr.length === 1 && p.ev.dur < 1 - EPS) {
+        out.push(
+          <text key={`fl${barIdx}-${i}`} x={sx} y={tipY} fontSize={NH_FS} fontFamily="Bravura" fill="var(--text-primary)" opacity={op}>
+            {g(p.ev.dur <= 0.26 ? (down ? 0xe243 : 0xe242) : down ? 0xe241 : 0xe240)}
+          </text>
+        );
+      }
     });
-    groups.forEach((g, gi) => {
-      const first = pts[g[0]];
-      const last = pts[g[g.length - 1]];
-      const top = beamTop[g[0]];
-      const op = dim ? 0.35 : 1;
-      if (g.length >= 2) {
-        out.push(<rect key={`b${barIdx}-${gi}`} x={first.x + 7} y={top - 2} width={last.x - first.x + 2} height={4.5} fill="#2a2721" opacity={op} />);
-        if (g.every((i) => pts[i].ev.dur <= 0.26)) {
-          out.push(<rect key={`b2${barIdx}-${gi}`} x={first.x + 7} y={top + 5} width={last.x - first.x + 2} height={4.5} fill="#2a2721" opacity={op} />);
-        }
-        if (g.length === 3 && g.every((i) => Math.abs(pts[i].ev.dur - T3) < 0.02)) {
-          const cx = (first.x + last.x) / 2 + 8;
-          out.push(
-            <g key={`t${barIdx}-${gi}`} opacity={op}>
-              <path d={`M${first.x + 8} ${top - 8} V${top - 14} H${last.x + 8} V${top - 8}`} fill="none" stroke="#2a2721" strokeWidth={1.4} />
-              <text x={cx} y={top - 18} fontSize={14} fontStyle="italic" textAnchor="middle" fill="#2a2721" fontFamily="serif">
-                3
-              </text>
-            </g>
-          );
-        }
-      } else {
-        out.push(<path key={`f${barIdx}-${gi}`} d={`M${first.x + 8} ${top} q9 8 6 20`} fill="none" stroke="#2a2721" strokeWidth={2.4} opacity={op} />);
+    groups.forEach((gr, gi) => {
+      if (gr.length < 2) return;
+      const down = stemsDownOf(gr);
+      const tipY = down ? Math.max(...gr.map((k) => pts[k].y)) + STEM_LEN : Math.min(...gr.map((k) => pts[k].y)) - STEM_LEN;
+      const x1 = stemX(gr[0], down) - 0.75;
+      const x2 = stemX(gr[gr.length - 1], down) + 0.75;
+      const by = (n: number) => (down ? tipY - 5 - n * 9 : tipY - 5 + n * 9 + 0);
+      out.push(<rect key={`b${barIdx}-${gi}`} x={x1} y={by(0)} width={x2 - x1} height={8} fill="var(--text-primary)" opacity={op} />);
+      if (gr.every((i) => pts[i].ev.dur <= 0.26)) out.push(<rect key={`b2${barIdx}-${gi}`} x={x1} y={by(1) + (down ? -3 : 0)} width={x2 - x1} height={8} fill="var(--text-primary)" opacity={op} />);
+      if (gr.length === 3 && gr.every((i) => Math.abs(pts[i].ev.dur - T3) < 0.02)) {
+        const bx = down ? tipY + 12 : tipY - 14;
+        const dirY = down ? 8 : -8;
+        out.push(
+          <g key={`t${barIdx}-${gi}`} opacity={op}>
+            <path d={`M${x1} ${bx - dirY} V${bx} H${x2} V${bx - dirY}`} fill="none" stroke="var(--text-primary)" strokeWidth={1.4} />
+            <text x={(x1 + x2) / 2} y={down ? bx + 18 : bx - 6} fontSize={18} fontStyle="italic" textAnchor="middle" fill="var(--text-primary)" fontFamily="serif">
+              3
+            </text>
+          </g>
+        );
       }
     });
     out.push(
-      <text key={`c${barIdx}`} x={LEFT_X + barIdx * BAR_W + 6} y={22} fontSize={19} fontWeight={600} fill="#2a2721" opacity={dim ? 0.5 : 1}>
+      <text key={`c${barIdx}`} x={LEFT_X + barIdx * BAR_W + 8} y={STAFF_TOP - 28} fontSize={24} fontWeight={600} fill="var(--text-primary)" opacity={dim ? 0.55 : 1}>
         {chordLabel(plan.chordRoot, plan.chordKind)}
       </text>
     );
     out.push(
-      <text key={`bn${barIdx}`} x={LEFT_X + barIdx * BAR_W + BAR_W - 6} y={30} fontSize={12} textAnchor="end" fill="#6c6455">
+      <text key={`bn${barIdx}`} x={LEFT_X + barIdx * BAR_W + BAR_W - 6} y={STAFF_TOP - 28} fontSize={12} textAnchor="end" fill="var(--text-secondary)">
         {barNo}/{rounds}
       </text>
     );
     return out;
   }
-
-  const timeSigY1 = STAFF_BOTTOM - 28 - 2;
-  const timeSigY2 = STAFF_BOTTOM - 2;
 
   return (
     <>
@@ -619,46 +630,35 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
       })()}
 
       <section className="sb-paper">
-        <svg viewBox="0 0 772 220" style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="リズム譜。現在の小節と次の小節">
-          <g stroke="#2a2721" strokeWidth={1.4}>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <line key={i} x1={8} x2={764} y1={STAFF_BOTTOM - i * 14} y2={STAFF_BOTTOM - i * 14} />
-            ))}
-            <line x1={LEFT_X + BAR_W} x2={LEFT_X + BAR_W} y1={STAFF_BOTTOM - 56} y2={STAFF_BOTTOM} />
-            <line x1={763} x2={763} y1={STAFF_BOTTOM - 56} y2={STAFF_BOTTOM} strokeWidth={3} />
-          </g>
-          <text x={8} y={STAFF_BOTTOM + 12} fontSize={92} fill="#2a2721" fontFamily="'Apple Symbols','Noto Music','Bravura',serif">
-            𝄞
-          </text>
-          <text x={86} y={timeSigY1 + 2} fontSize={30} fontWeight={700} fill="#2a2721">
-            {timeSig.numerator}
-          </text>
-          <text x={86} y={timeSigY2} fontSize={30} fontWeight={700} fill="#2a2721">
-            {timeSig.denominator}
-          </text>
-          {Array.from({ length: barBeats }, (_, b) => (
-            <line key={b} x1={xOf(0, b)} x2={xOf(0, b)} y1={STAFF_BOTTOM - 56} y2={STAFF_BOTTOM + 70} stroke="#9a9384" strokeWidth={1} strokeDasharray="2 4" opacity={0.0} />
+        <svg viewBox={`0 0 ${VB_W} 300`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="リズム譜。現在の小節と次の小節">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <line key={i} x1={0} x2={VB_W - 20} y1={STAFF_TOP + i * 20} y2={STAFF_TOP + i * 20} stroke="var(--border-strong)" strokeWidth={1} />
           ))}
+          <line x1={LEFT_X + BAR_W} x2={LEFT_X + BAR_W} y1={STAFF_TOP} y2={STAFF_BOT} stroke="var(--text-primary)" strokeWidth={1.5} />
+          <line x1={VB_W - 20} x2={VB_W - 20} y1={STAFF_TOP} y2={STAFF_BOT} stroke="var(--text-primary)" strokeWidth={1.5} />
+          <text x={0} y={STAFF_TOP + 60} fontSize={80} fontFamily="Bravura" fill="var(--text-primary)">
+            {g(0xe050)}
+          </text>
+          <text x={104} y={STAFF_TOP + 20} fontSize={80} fontFamily="Bravura" textAnchor="middle" fill="var(--text-primary)">
+            {timeSigStr(timeSig.numerator)}
+          </text>
+          <text x={104} y={STAFF_TOP + 60} fontSize={80} fontFamily="Bravura" textAnchor="middle" fill="var(--text-primary)">
+            {timeSigStr(timeSig.denominator)}
+          </text>
           {running && leftPlan && renderBar(leftPlan, 0, curBar + 1)}
           {running && rightPlan && renderBar(rightPlan, 1, curBar + 2)}
           {!running && (
-            <text x={LEFT_X + 20} y={STAFF_BOTTOM - 20} fontSize={16} fill="#6c6455">
+            <text x={LEFT_X + 20} y={STAFF_TOP + 46} fontSize={20} fill="var(--text-secondary)">
               Press Start. You hear the right note on each beat; tap the glowing dot with it.
             </text>
           )}
-          {playheadBeat !== null && <rect x={xOf(0, playheadBeat) - 2} y={44} width={4} height={150} rx={2} fill="#b8942f" />}
-          {/* 拍の目盛り */}
-          <g stroke="#9a9384" strokeWidth={1.4}>
-            <line x1={LEFT_X} x2={LEFT_X + 2 * BAR_W} y1={210} y2={210} />
+          {playheadBeat !== null && <rect x={xOf(0, playheadBeat) - 2} y={STAFF_TOP - 36} width={4} height={160} rx={2} fill="var(--accent)" />}
+          <g stroke="var(--border-strong)" strokeWidth={1.4}>
+            <line x1={LEFT_X} x2={LEFT_X + 2 * BAR_W} y1={282} y2={282} />
             {Array.from({ length: barBeats * 2 + 1 }, (_, b) => (
-              <line key={b} x1={LEFT_X + (b / barBeats) * BAR_W} x2={LEFT_X + (b / barBeats) * BAR_W} y1={205} y2={215} />
+              <line key={b} x1={LEFT_X + (b / barBeats) * BAR_W} x2={LEFT_X + (b / barBeats) * BAR_W} y1={277} y2={287} />
             ))}
           </g>
-          {Array.from({ length: barBeats }, (_, b) => (
-            <text key={b} x={xOf(0, b)} y={218} fontSize={11} textAnchor="middle" fontWeight={beatInBar === b ? 700 : 400} fill={beatInBar === b ? "#8A6A0E" : "#6c6455"} opacity={0}>
-              {b + 1}
-            </text>
-          ))}
         </svg>
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontSize: 13, color: "#4a453c", padding: "0 2px 4px" }}>
           {(["on", "early", "late"] as Verdict[]).map((v) => (
@@ -721,24 +721,28 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
               <g key={s}>
                 <line x1={FB.left} x2={FB.left + FRETS * FB.fretW} y1={FB.top + s * FB.gap} y2={FB.top + s * FB.gap} stroke="#cfc8b8" strokeOpacity={0.75} strokeWidth={0.8 + s * 0.35} />
                 <text x={FB.left - 12} y={FB.top + s * FB.gap + 4} textAnchor="end" fontSize={12} fill="var(--text-secondary)">
-                  {`${s + 1}`}
+                  {`String ${s + 1} · ${["E", "B", "G", "D", "A", "E"][s]}`}
                 </text>
               </g>
             ))}
-            {/* 現在のコードの構成音(薄く) */}
+            {/* 現在のコードの構成音(Chord tones と同じ色分け) */}
             {running &&
               leftPlan &&
               (() => {
                 const intervals = CHORD_TYPES[leftPlan.chordKind] ?? CHORD_TYPES.maj7;
+                const role = (iv: number) => (iv === 0 ? "danger" : iv === 3 || iv === 4 ? "warning" : iv === 6 || iv === 7 || iv === 10 || iv === 11 ? "success" : "pro");
                 const dots: React.ReactNode[] = [];
                 for (let s = 0; s < TARGET_STRINGS; s++) {
                   for (let f = 1; f <= FRETS; f++) {
                     const iv = intervals.find((v) => mod12(leftPlan.chordRoot + v) === mod12(OPEN_MIDI[s] + f));
                     if (iv === undefined) continue;
+                    const r = role(iv);
+                    const cx = FB.left + f * FB.fretW - FB.fretW / 2;
+                    const cy = FB.top + s * FB.gap;
                     dots.push(
-                      <g key={`${s}-${f}`} opacity={0.5}>
-                        <circle cx={FB.left + f * FB.fretW - FB.fretW / 2} cy={FB.top + s * FB.gap} r={10} fill="#9a9384" />
-                        <text x={FB.left + f * FB.fretW - FB.fretW / 2} y={FB.top + s * FB.gap + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1a1511">
+                      <g key={`${s}-${f}`} opacity={0.7}>
+                        <circle cx={cx} cy={cy} r={10} fill={`var(--${r})`} />
+                        <text x={cx} y={cy + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill={`var(--on-${r})`}>
                           {DEGREE_BY_INTERVAL[iv] ?? ""}
                         </text>
                       </g>
@@ -764,9 +768,20 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             )}
           </svg>
         </div>
-        <div id="legend">
-          Notes are chosen from the chord tones of the current bar. Strings 1–4 only. Any fret with the right note counts.
+        <div id="degree-legend" aria-label="Colour key" style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}>
+          {[
+            { label: "R · root", role: "danger" },
+            { label: "3 · 3rd", role: "warning" },
+            { label: "5, 7 · 5th, 7th", role: "success" },
+            { label: "6 · 6th", role: "pro" },
+          ].map((it) => (
+            <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span aria-hidden style={{ width: 12, height: 12, borderRadius: "50%", display: "inline-block", background: `var(--${it.role})` }} />
+              {it.label}
+            </span>
+          ))}
         </div>
+        <div id="legend">Notes come from the chord tones of the current bar (strings 1–4). Any fret with the right note counts.</div>
       </section>
     </>
   );
