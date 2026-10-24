@@ -10,6 +10,7 @@ import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/pat
 import { parseMusicXmlFile } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
 import IconButton from "@/components/IconButton";
+import RhythmPractice from "@/components/RhythmPractice";
 import { ChordIcon, FlatIcon, RestIcon, SharpIcon, TripletIcon } from "@/components/MusicIcons";
 
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -2401,6 +2402,7 @@ export default function StaffToFretboard({
           />
         </div>
 
+        {mode === "tones" && (
         <div className="toolbar-group" style={{ marginLeft: "auto", background: "transparent", borderColor: "transparent", paddingRight: 0 }}>
           <IconButton
             id="play-btn"
@@ -2414,6 +2416,7 @@ export default function StaffToFretboard({
           />
           <IconButton id="clear-btn" label="Clear all" icon={<Eraser size={16} />} onClick={handleClear} />
         </div>
+        )}
         </div>
         <div className="sb-row">
         <div className="sb-seg" role="group" aria-label="Practice mode">
@@ -2488,6 +2491,7 @@ export default function StaffToFretboard({
         </div>
 
         </div>
+        {mode === "tones" && (
         <div className="sb-summary">
           <span>Pattern: {patternText.trim() || "—"}</span>
           <span>Oct {patternOctave > 0 ? "+" : ""}{patternOctave}</span>
@@ -2496,7 +2500,8 @@ export default function StaffToFretboard({
             {editOpen ? "Hide chords & pattern ▴" : "Edit chords & pattern ▾"}
           </button>
         </div>
-        {editOpen && (
+        )}
+        {mode === "tones" && editOpen && (
           <div className="sb-row sb-edit">
         <div className="toolbar-group" data-cap="Entry & measures">
           <IconButton
@@ -2705,6 +2710,11 @@ export default function StaffToFretboard({
         </div>
       )}
 
+      {mode === "rhythm" && (
+        <RhythmPractice measures={measures} chordRoot={chordRoot} chordType={chordType} useFlats={useFlats} timeSig={timeSig} />
+      )}
+      {mode === "tones" && (
+      <>
       <section className="sb-paper">
       <div id="staff-wrap" ref={staffWrapRef} style={{ overflowX: "auto" }}>
       <svg
@@ -3229,6 +3239,8 @@ export default function StaffToFretboard({
         Click the staff to place a note; click the same spot again to remove it. A selected note shows accidental and duration controls below.
       </div>
       </section>
+      </>
+      )}
     </>
   );
 }
