@@ -648,6 +648,8 @@ export default function StaffToFretboard({
   // 音価を次の新規配置にも引き継ぐ（起動時・クリア後はDEFAULT_DURATIONに戻す）。
   const [defaultDuration, setDefaultDuration] = useState(DEFAULT_DURATION);
   const [restMode, setRestMode] = useState(false);
+  const [mode, setMode] = useState<"tones" | "rhythm">("tones");
+  const [editOpen, setEditOpen] = useState(false);
   // ONの間、新規配置する音符・休符を3連符にする（休符モードと同様のトグル）。
   const [tripletMode, setTripletMode] = useState(false);
   const [fullFeedback, setFullFeedback] = useState(false);
@@ -2267,7 +2269,15 @@ export default function StaffToFretboard({
         }
         .toolbar-group select, .toolbar-group button { background: var(--surface-0); border-color: var(--border); }
         .toolbar-group select:hover, .toolbar-group button:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-2); }
-        .toolbar-group:last-child { margin-left:auto; justify-content:flex-end; background:transparent; border-color:transparent; padding-right:0; }
+        .sb-row { display:flex; flex-basis:100%; align-items:stretch; gap:8px; flex-wrap:wrap; }
+        .sb-seg { display:flex; align-items:center; gap:4px; padding:4px; background: var(--surface-1); border:1px solid var(--border); border-radius:12px; }
+        .sb-seg button { border:none; background:transparent; font-weight:500; padding:0 16px; height:36px; color: var(--text-secondary); }
+        .sb-seg button.sb-seg-on, .sb-seg button.sb-seg-on:hover { background: var(--accent); color: var(--on-accent); font-weight:700; }
+        .sb-summary { display:flex; flex-basis:100%; align-items:center; gap:14px; flex-wrap:wrap; font-size:13px; color: var(--text-secondary); padding:0 2px; }
+        .sb-summary button { margin-left:auto; background: transparent; border-color: rgba(217,182,90,0.55); color: var(--accent); border-radius:999px; padding:0 14px; font-weight:600; }
+        .sb-edit { align-items:flex-start; }
+        .sb-song { flex:1 1 300px; min-width:0; }
+        .sb-song select { flex:1 1 150px; }
         #legend { font-size: 12px; color: var(--text-secondary); margin-top: 0.5rem; }
         #fretboard-wrap { overflow-x: auto; }
 
@@ -2326,7 +2336,8 @@ export default function StaffToFretboard({
       </header>
 
       <div id="controls">
-        <div className="toolbar-group" data-cap="Song">
+        <div className="sb-row">
+        <div className="toolbar-group sb-song" data-cap="Song">
           <select
             id="template-select"
             defaultValue=""
@@ -2388,6 +2399,162 @@ export default function StaffToFretboard({
             disabled={isImporting}
             onClick={() => fileInputRef.current?.click()}
           />
+        </div>
+
+        <div className="toolbar-group" style={{ marginLeft: "auto", background: "transparent", borderColor: "transparent", paddingRight: 0 }}>
+          <IconButton
+            id="play-btn"
+            label={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading sounds…"}
+            text={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading…"}
+            variant="primary"
+            icon={isPlaying ? <Square size={16} /> : <Play size={16} />}
+            active={isPlaying}
+            disabled={!samplesReady && !isPlaying}
+            onClick={handlePlayClick}
+          />
+          <IconButton id="clear-btn" label="Clear all" icon={<Eraser size={16} />} onClick={handleClear} />
+        </div>
+        </div>
+        <div className="sb-row">
+        <div className="sb-seg" role="group" aria-label="Practice mode">
+          <button type="button" aria-pressed={mode === "tones"} className={mode === "tones" ? "sb-seg-on" : ""} onClick={() => setMode("tones")}>
+            Chord tones
+          </button>
+          <button type="button" aria-pressed={mode === "rhythm"} className={mode === "rhythm" ? "sb-seg-on" : ""} onClick={() => setMode("rhythm")}>
+            Rhythm
+          </button>
+        </div>
+        <div className="toolbar-group" data-cap="Key & meter">
+          <select aria-label="Key (movable Do)" value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
+            {names.map((n, i) => (
+              <option key={i} value={i}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <IconButton
+            id="accidental-toggle"
+            label={useFlats ? "Use sharps" : "Use flats"}
+            icon={useFlats ? <SharpIcon /> : <FlatIcon />}
+            onClick={() => setUseFlats((prev) => !prev)}
+          />
+          <select
+            aria-label="Time signature"
+            value={`${timeSig.numerator}/${timeSig.denominator}`}
+            onChange={(e) => {
+              const [num, den] = e.target.value.split("/").map(Number);
+              handleTimeSigChange(num, den);
+            }}
+          >
+            {TIME_SIG_OPTIONS.map((opt) => (
+              <option key={`${opt.numerator}/${opt.denominator}`} value={`${opt.numerator}/${opt.denominator}`}>
+                {opt.numerator}/{opt.denominator}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="toolbar-group" data-cap="Measure">
+          <IconButton
+            id="measure-prev-btn"
+            label="Previous measure"
+            icon={<ChevronLeft size={18} />}
+            disabled={currentMeasureIndex === 0}
+            onClick={() => {
+              setCurrentMeasureIndex((i) => Math.max(0, i - 1));
+              // ローカルなstartGridは小節をまたいで一意ではないため、選択状態は
+              // 小節移動のたびにリセットする（別の小節の音符が誤って選択中扱いに
+              // ならないようにする）。
+              setSelectedNoteKey(null);
+              setSelectedRowIdx(null);
+              setChordTargetGrid(0);
+            }}
+          />
+          <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+            Measure {currentMeasureIndex + 1} / {measures.length}
+          </span>
+          <IconButton
+            id="measure-next-btn"
+            label="Next measure"
+            icon={<ChevronRight size={18} />}
+            disabled={currentMeasureIndex === measures.length - 1}
+            onClick={() => {
+              setCurrentMeasureIndex((i) => Math.min(measures.length - 1, i + 1));
+              setSelectedNoteKey(null);
+              setSelectedRowIdx(null);
+              setChordTargetGrid(0);
+            }}
+          />
+        </div>
+
+        </div>
+        <div className="sb-summary">
+          <span>Pattern: {patternText.trim() || "—"}</span>
+          <span>Oct {patternOctave > 0 ? "+" : ""}{patternOctave}</span>
+          <span>{patternScope === "all" ? "All measures" : patternScope === "measure" ? "This measure" : "From this measure"}</span>
+          <button type="button" aria-expanded={editOpen} onClick={() => setEditOpen((v) => !v)}>
+            {editOpen ? "Hide chords & pattern ▴" : "Edit chords & pattern ▾"}
+          </button>
+        </div>
+        {editOpen && (
+          <div className="sb-row sb-edit">
+        <div className="toolbar-group" data-cap="Entry & measures">
+          <IconButton
+            id="rest-toggle"
+            label="Rest mode"
+            icon={<RestIcon />}
+            active={restMode}
+            onClick={() => setRestMode((prev) => !prev)}
+          />
+          <IconButton
+            id="triplet-toggle"
+            label="Triplet mode"
+            icon={<TripletIcon />}
+            active={tripletMode}
+            onClick={() => setTripletMode((prev) => !prev)}
+          />
+          <IconButton id="measure-add-btn" label="Add measure at end" icon={<Plus size={16} />} onClick={handleAddMeasure} />
+          <IconButton
+            id="measure-delete-btn"
+            label="Delete this measure"
+            icon={<Trash2 size={16} />}
+            disabled={measures.length <= 1}
+            onClick={handleDeleteMeasure}
+          />
+        </div>
+        <div className="toolbar-group" data-cap="Chord">
+          <select
+            id="chord-root-select"
+            aria-label="Chord root"
+            value={chordRoot}
+            onChange={(e) => setChordRoot(parseInt(e.target.value, 10))}
+          >
+            {names.map((n, i) => (
+              <option key={i} value={i}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <select id="chord-type-select" aria-label="Chord quality" value={chordType} onChange={(e) => setChordType(e.target.value)}>
+            {Object.keys(CHORD_TYPES).map((type) => (
+              <option key={type} value={type}>
+                {CHORD_TYPE_LABELS[type]}
+              </option>
+            ))}
+          </select>
+          <select
+            id="chord-inversion-select"
+            aria-label="Chord inversion"
+            value={chordInversion}
+            onChange={(e) => setChordInversion(parseInt(e.target.value, 10))}
+          >
+            {Array.from({ length: CHORD_TYPES[chordType].length }, (_, i) => i).map((inv) => (
+              <option key={inv} value={inv}>
+                {INVERSION_LABELS[inv]}
+              </option>
+            ))}
+          </select>
+          <IconButton id="chord-place-btn" label="Place chord" text="Place chord" variant="outline" icon={<ChordIcon />} onClick={handlePlaceChord} />
         </div>
 
         <div className="toolbar-group" data-cap="Pattern (chord tones)">
@@ -2505,139 +2672,8 @@ export default function StaffToFretboard({
           {practiceStatus && <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{practiceStatus}</span>}
         </div>
 
-        <div className="toolbar-group" data-cap="Key & meter">
-          <select aria-label="Key (movable Do)" value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
-            {names.map((n, i) => (
-              <option key={i} value={i}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <IconButton
-            id="accidental-toggle"
-            label={useFlats ? "Use sharps" : "Use flats"}
-            icon={useFlats ? <SharpIcon /> : <FlatIcon />}
-            onClick={() => setUseFlats((prev) => !prev)}
-          />
-          <select
-            aria-label="Time signature"
-            value={`${timeSig.numerator}/${timeSig.denominator}`}
-            onChange={(e) => {
-              const [num, den] = e.target.value.split("/").map(Number);
-              handleTimeSigChange(num, den);
-            }}
-          >
-            {TIME_SIG_OPTIONS.map((opt) => (
-              <option key={`${opt.numerator}/${opt.denominator}`} value={`${opt.numerator}/${opt.denominator}`}>
-                {opt.numerator}/{opt.denominator}
-              </option>
-            ))}
-          </select>
-          <IconButton
-            id="rest-toggle"
-            label="Rest mode"
-            icon={<RestIcon />}
-            active={restMode}
-            onClick={() => setRestMode((prev) => !prev)}
-          />
-          <IconButton
-            id="triplet-toggle"
-            label="Triplet mode"
-            icon={<TripletIcon />}
-            active={tripletMode}
-            onClick={() => setTripletMode((prev) => !prev)}
-          />
-        </div>
-
-        <div className="toolbar-group" data-cap="Measure">
-          <IconButton
-            id="measure-prev-btn"
-            label="Previous measure"
-            icon={<ChevronLeft size={18} />}
-            disabled={currentMeasureIndex === 0}
-            onClick={() => {
-              setCurrentMeasureIndex((i) => Math.max(0, i - 1));
-              // ローカルなstartGridは小節をまたいで一意ではないため、選択状態は
-              // 小節移動のたびにリセットする（別の小節の音符が誤って選択中扱いに
-              // ならないようにする）。
-              setSelectedNoteKey(null);
-              setSelectedRowIdx(null);
-              setChordTargetGrid(0);
-            }}
-          />
-          <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
-            Measure {currentMeasureIndex + 1} / {measures.length}
-          </span>
-          <IconButton
-            id="measure-next-btn"
-            label="Next measure"
-            icon={<ChevronRight size={18} />}
-            disabled={currentMeasureIndex === measures.length - 1}
-            onClick={() => {
-              setCurrentMeasureIndex((i) => Math.min(measures.length - 1, i + 1));
-              setSelectedNoteKey(null);
-              setSelectedRowIdx(null);
-              setChordTargetGrid(0);
-            }}
-          />
-          <IconButton id="measure-add-btn" label="Add measure at end" icon={<Plus size={16} />} onClick={handleAddMeasure} />
-          <IconButton
-            id="measure-delete-btn"
-            label="Delete this measure"
-            icon={<Trash2 size={16} />}
-            disabled={measures.length <= 1}
-            onClick={handleDeleteMeasure}
-          />
-        </div>
-
-        <div className="toolbar-group" data-cap="Chord">
-          <select
-            id="chord-root-select"
-            aria-label="Chord root"
-            value={chordRoot}
-            onChange={(e) => setChordRoot(parseInt(e.target.value, 10))}
-          >
-            {names.map((n, i) => (
-              <option key={i} value={i}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <select id="chord-type-select" aria-label="Chord quality" value={chordType} onChange={(e) => setChordType(e.target.value)}>
-            {Object.keys(CHORD_TYPES).map((type) => (
-              <option key={type} value={type}>
-                {CHORD_TYPE_LABELS[type]}
-              </option>
-            ))}
-          </select>
-          <select
-            id="chord-inversion-select"
-            aria-label="Chord inversion"
-            value={chordInversion}
-            onChange={(e) => setChordInversion(parseInt(e.target.value, 10))}
-          >
-            {Array.from({ length: CHORD_TYPES[chordType].length }, (_, i) => i).map((inv) => (
-              <option key={inv} value={inv}>
-                {INVERSION_LABELS[inv]}
-              </option>
-            ))}
-          </select>
-          <IconButton id="chord-place-btn" label="Place chord" text="Place chord" variant="outline" icon={<ChordIcon />} onClick={handlePlaceChord} />
-        </div>
-
-        <div className="toolbar-group" style={{ marginLeft: "auto", borderRight: "none", paddingRight: 0 }}>
-          <IconButton
-            id="play-btn"
-            label={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading sounds…"}
-            text={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading…"}
-            variant="primary"
-            icon={isPlaying ? <Square size={16} /> : <Play size={16} />}
-            active={isPlaying}
-            disabled={!samplesReady && !isPlaying}
-            onClick={handlePlayClick}
-          />
-          <IconButton id="clear-btn" label="Clear all" icon={<Eraser size={16} />} onClick={handleClear} />
-        </div>
+          </div>
+        )}
       </div>
 
       {lastImportWarnings && (
