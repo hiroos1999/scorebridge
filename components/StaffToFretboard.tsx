@@ -2326,10 +2326,8 @@ export default function StaffToFretboard({
       <header className="sb-header">
         <svg width="34" height="26" viewBox="0 0 34 26" aria-hidden="true">
           <path d="M2 22 C 8 2, 26 2, 32 22" fill="none" stroke="#d9b65a" strokeWidth="2.4" strokeLinecap="round" />
-          <g stroke="#a39b8c" strokeWidth="1.2">
-            <line x1="2" y1="22" x2="2" y2="10" /><line x1="2" y1="22" x2="2" y2="22" />
-            <line x1="32" y1="22" x2="32" y2="10" />
-            <line x1="12" y1="22" x2="12" y2="12" /><line x1="22" y1="22" x2="22" y2="12" />
+          <g stroke="#a39b8c" strokeLinecap="round">
+            <line x1="6.0" y1="22" x2="6.0" y2="14.7" strokeWidth="0.8" /><line x1="10.4" y1="22" x2="10.4" y2="10.3" strokeWidth="0.95" /><line x1="14.8" y1="22" x2="14.8" y2="8.4" strokeWidth="1.1" /><line x1="19.2" y1="22" x2="19.2" y2="8.4" strokeWidth="1.3" /><line x1="23.6" y1="22" x2="23.6" y2="10.3" strokeWidth="1.5" /><line x1="28.0" y1="22" x2="28.0" y2="14.7" strokeWidth="1.7" />
           </g>
         </svg>
         <span className="sb-name">ScoreBridge</span>
