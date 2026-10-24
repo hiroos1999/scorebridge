@@ -104,6 +104,10 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   const [countIn, setCountIn] = useState(true);
   const [running, setRunning] = useState(false);
   const [nowT, setNowT] = useState(0);
+  const [rounds, setRounds] = useState(8);
+  const [finished, setFinished] = useState(false);
+  const roundsRef = useRef(8);
+  roundsRef.current = rounds;
   const [results, setResults] = useState<Record<string, { verdict: Verdict; ms: number }>>({});
   const [lastTap, setLastTap] = useState<{ s: number; f: number; verdict: Verdict } | null>(null);
 
@@ -223,6 +227,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
     resultsRef.current = {};
     setResults({});
     setLastTap(null);
+    setFinished(false);
     const countInBeats = countIn ? barBeats : 0;
     t0Ref.current = ctx.currentTime + 0.2 + countInBeats * beatDur;
     nextClickRef.current = -countInBeats;
@@ -260,6 +265,20 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           }
         });
       }
+      // 最後の小節が終わったら自動で終了して採点画面へ
+      const endT = t0Ref.current + roundsRef.current * barBeats * beatDurRef.current + windowSec;
+      if (t > endT) {
+        for (let b = 0; b < roundsRef.current; b++) {
+          planRef.current[b]?.events.forEach((ev, i) => {
+            const key = `${b}:${i}`;
+            if (!resultsRef.current[key]) resultsRef.current[key] = { verdict: "miss", ms: 0 };
+          });
+        }
+        setResults({ ...resultsRef.current });
+        setFinished(true);
+        stop();
+        return;
+      }
       if (changed) setResults({ ...resultsRef.current });
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -280,7 +299,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   useEffect(() => {
     if (running) stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, tempo, barBeats, chordsPerBar]);
+  }, [kind, tempo, barBeats, chordsPerBar, rounds]);
 
   // --- 指板のタップ ---
   const FB = { w: 780, h: 214, left: 70, fretW: 58, top: 34, gap: 28 };
@@ -304,7 +323,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
     let bestKey: string | null = null;
     let bestEv: PlanEvent | null = null;
     let bestDelta = Infinity;
-    for (let b = Math.max(0, curBar - 1); b <= curBar + 1; b++) {
+    for (let b = Math.max(0, curBar - 1); b <= Math.min(curBar + 1, roundsRef.current - 1); b++) {
       planRef.current[b]?.events.forEach((ev, i) => {
         const key = `${b}:${i}`;
         if (resultsRef.current[key]) return;
@@ -338,13 +357,13 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   const inCountIn = running && posBeats < 0;
   if (running) ensurePlan(curBar + 1);
   const leftPlan: PlanBar | undefined = planRef.current[curBar];
-  const rightPlan: PlanBar | undefined = planRef.current[curBar + 1];
+  const rightPlan: PlanBar | undefined = curBar + 1 < rounds ? planRef.current[curBar + 1] : undefined;
   const beatInBar = running && posBeats >= 0 ? Math.floor(posBeats - curBar * barBeats + EPS) : inCountIn ? Math.floor(posBeats + barBeats + EPS) : -1;
   const playheadBeat = running && posBeats >= 0 ? posBeats - curBar * barBeats : null;
 
   // 次の目標(まだ結果が無い最初の音。現在の小節と次の小節から探す)
   let target: { ev: PlanEvent; key: string } | null = null;
-  for (const b of [curBar, curBar + 1]) {
+  for (const b of [curBar, curBar + 1].filter((x) => x < rounds)) {
     const bar = planRef.current[b];
     if (!bar) continue;
     for (let i = 0; i < bar.events.length; i++) {
@@ -484,7 +503,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
     );
     out.push(
       <text key={`bn${barIdx}`} x={LEFT_X + barIdx * BAR_W + BAR_W - 6} y={30} fontSize={12} textAnchor="end" fill="#6c6455">
-        {barNo}
+        {barNo}/{rounds}
       </text>
     );
     return out;
@@ -512,6 +531,15 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             +
           </button>
         </div>
+        <div className="toolbar-group" data-cap="Length">
+          <button type="button" aria-label="Fewer bars" disabled={rounds <= 4} onClick={() => setRounds((r) => Math.max(4, r - 4))}>
+            −
+          </button>
+          <span style={{ minWidth: 56, textAlign: "center", fontWeight: 700 }}>{rounds} bars</span>
+          <button type="button" aria-label="More bars" disabled={rounds >= 16} onClick={() => setRounds((r) => Math.min(16, r + 4))}>
+            +
+          </button>
+        </div>
         <div className="toolbar-group" data-cap="Count-in">
           <button type="button" aria-pressed={countIn} style={{ minWidth: 64, color: countIn ? "var(--accent)" : "var(--text-secondary)", fontWeight: 700 }} onClick={() => setCountIn((v) => !v)}>
             {countIn ? "1 bar" : "Off"}
@@ -529,6 +557,40 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           </button>
         </div>
       </div>
+
+      {finished && (() => {
+        const total = Math.max(1, stats.total);
+        const pts = stats.on + (stats.early + stats.late) * 0.6;
+        const score = Math.round((pts / total) * 100);
+        const grade = score >= 90 ? "S" : score >= 75 ? "A" : score >= 55 ? "B" : "C";
+        const tendency = stats.early + stats.late === 0 ? "" : stats.early > stats.late * 1.5 ? "Tends to rush (early)." : stats.late > stats.early * 1.5 ? "Tends to drag (late)." : "Early and late are balanced.";
+        return (
+          <section className="sb-paper" style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap", margin: "0 0 10px" }}>
+            <div style={{ textAlign: "center", minWidth: 120 }}>
+              <div style={{ fontSize: 54, fontWeight: 800, lineHeight: 1, color: "#2a2721" }}>{score}</div>
+              <div style={{ fontSize: 13, color: "#6c6455" }}>points · grade {grade}</div>
+            </div>
+            <div style={{ flex: "1 1 260px", fontSize: 15, color: "#2a2721", lineHeight: 1.7 }}>
+              <div>
+                <b style={{ color: verdictColor.on }}>On time {stats.on}</b> / {stats.total} notes · early {stats.early} · late {stats.late} · wrong {stats.wrong} · missed {stats.miss}
+              </div>
+              <div>
+                Average timing {stats.avg >= 0 ? "+" : ""}
+                {stats.avg} ms. {tendency}
+              </div>
+              <div style={{ fontSize: 12, color: "#6c6455" }}>On time = 100, early/late = 60, wrong or missed = 0 per note.</div>
+            </div>
+            <button
+              type="button"
+              className="icon-btn icon-btn-text icon-btn-primary"
+              style={{ width: "auto", padding: "0 18px" }}
+              onClick={() => start()}
+            >
+              Try again
+            </button>
+          </section>
+        );
+      })()}
 
       <section className="sb-paper">
         <svg viewBox="0 0 772 220" style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="リズム譜。現在の小節と次の小節">
