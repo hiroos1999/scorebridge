@@ -649,7 +649,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           {running && rightPlan && renderBar(rightPlan, 1, curBar + 2)}
           {!running && (
             <text x={LEFT_X + 20} y={STAFF_TOP + 46} fontSize={20} fill="var(--text-secondary)">
-              Press Start. You hear the right note on each beat; tap the glowing dot with it.
+              Press Start. You hear the right note on each beat; tap any glowing dot with it.
             </text>
           )}
           {playheadBeat !== null && <rect x={xOf(0, playheadBeat) - 2} y={STAFF_TOP - 36} width={4} height={160} rx={2} fill="var(--accent)" />}
@@ -680,7 +680,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
       <section className="sb-board">
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 6, padding: "0 4px 4px", fontSize: 13 }}>
           <span style={{ color: "var(--accent)", fontWeight: 700 }}>
-            {running && target ? `Next: ${target.ev.degree} (${names[target.ev.pc]}) — tap the glowing dot on the beat` : "Chord tones of the current chord"}
+            {running && target ? `Next: ${target.ev.degree} (${names[target.ev.pc]}) — tap any glowing dot on the beat` : "Chord tones of the current chord"}
           </span>
           <span style={{ color: "var(--text-secondary)" }}>
             {lastTap ? `Last tap: ${verdictText[lastTap.verdict]}` : "Pitch and timing are both scored"}
@@ -751,15 +751,27 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
                 }
                 return dots;
               })()}
-            {/* 次の目標 */}
+            {/* 次の目標: 同じ音(ピッチクラス)が指板上のどこにあっても、全部光らせる */}
             {running && target && (
               <g>
-                <circle cx={FB.left + target.ev.pos.f * FB.fretW - FB.fretW / 2} cy={FB.top + target.ev.pos.s * FB.gap} r={24} fill="none" stroke="#d9b65a" strokeWidth={3} />
-                <circle cx={FB.left + target.ev.pos.f * FB.fretW - FB.fretW / 2} cy={FB.top + target.ev.pos.s * FB.gap} r={31} fill="none" stroke="#d9b65a" strokeWidth={1.5} opacity={0.5} />
-                <circle cx={FB.left + target.ev.pos.f * FB.fretW - FB.fretW / 2} cy={FB.top + target.ev.pos.s * FB.gap} r={13} fill="#d9b65a" />
-                <text x={FB.left + target.ev.pos.f * FB.fretW - FB.fretW / 2} y={FB.top + target.ev.pos.s * FB.gap + 5} textAnchor="middle" fontSize={14} fontWeight={700} fill="#1a1511">
-                  {target.ev.degree}
-                </text>
+                {OPEN_MIDI.slice(0, TARGET_STRINGS).flatMap((open, s) =>
+                  Array.from({ length: FRETS }, (_, i) => i + 1)
+                    .filter((f) => mod12(open + f) === target.ev.pc)
+                    .map((f) => {
+                      const cx = FB.left + f * FB.fretW - FB.fretW / 2;
+                      const cy = FB.top + s * FB.gap;
+                      return (
+                        <g key={`t${s}-${f}`}>
+                          <circle cx={cx} cy={cy} r={24} fill="none" stroke="#d9b65a" strokeWidth={3} />
+                          <circle cx={cx} cy={cy} r={31} fill="none" stroke="#d9b65a" strokeWidth={1.5} opacity={0.5} />
+                          <circle cx={cx} cy={cy} r={13} fill="#d9b65a" />
+                          <text x={cx} y={cy + 5} textAnchor="middle" fontSize={14} fontWeight={700} fill="#1a1511">
+                            {target.ev.degree}
+                          </text>
+                        </g>
+                      );
+                    })
+                )}
               </g>
             )}
             {/* 直前のタップ位置 */}
