@@ -657,6 +657,8 @@ export default function StaffToFretboard({
   const [editOpen, setEditOpen] = useState(false);
   const [shapesOn, setShapesOn] = useState(false);
   const [focusOn, setFocusOn] = useState(false);
+  const [focusLoState, setFocusLoState] = useState(3);
+  const [focusW, setFocusW] = useState(5);
   const [labelMode, setLabelMode] = useState<"key" | "chord">("key");
   const [shapeSel, setShapeSel] = useState<ShapeName | null>(null);
   // ONの間、新規配置する音符・休符を3連符にする（休符モードと同様のトグル）。
@@ -1645,22 +1647,11 @@ export default function StaffToFretboard({
     shapesOn && displayedHarmony && shapeQuality
       ? SHAPE_ORDER.map((name) => ({ name, ...shapeNotes(name, displayedHarmony.root, shapeQuality, FRETS) })).filter((sh) => sh.notes.length >= 2)
       : [];
-  // Focus: 選んだシェイプの範囲だけを拡大表示する
-  const focusShape = focusOn && shapeSel ? shapeList.find((sh) => sh.name === shapeSel) : undefined;
-  let focusLo = 0;
-  let focusHi = FRETS;
-  if (focusShape) {
-    const fs = focusShape.notes.map((n) => n.f);
-    focusLo = Math.max(0, Math.min(...fs) - 1);
-    focusHi = Math.min(FRETS, Math.max(Math.max(...fs) + 1, focusLo + 4));
-    focusLo = Math.max(0, Math.min(focusLo, focusHi - 4));
-  }
-  const shapesByFret = [...shapeList].sort((a, b) => a.start - b.start);
-  const stepShape = (dir: -1 | 1) => {
-    const i = shapesByFret.findIndex((sh) => sh.name === shapeSel);
-    const next = shapesByFret[(i + dir + shapesByFret.length) % shapesByFret.length];
-    if (next) setShapeSel(next.name);
-  };
+  // Focus: フレット範囲を固定して拡大表示する(シェイプやコードが変わっても範囲は動かない)
+  const focusLo = Math.max(0, Math.min(focusLoState, FRETS - focusW + 1));
+  const focusHi = Math.min(FRETS, focusLo + focusW - 1);
+  const focusShape = focusOn ? true : undefined;
+  const shiftFocus = (d: number) => setFocusLoState(Math.max(0, Math.min(FRETS - focusW + 1, focusLo + d)));
   const focusX0 = focusShape ? (focusLo === 0 ? 0 : 100 + (focusLo - 1) * 68 - 34) : 0;
   const focusX1 = focusShape ? 100 + focusHi * 68 + 12 : 940;
   const visibleShapes = shapeList.filter((sh) => shapeSel === null || sh.name === shapeSel);
@@ -3107,11 +3098,36 @@ export default function StaffToFretboard({
           onClick={() => {
             setShapesOn((v) => !v);
             setShapeSel(null);
-            setFocusOn(false);
           }}
         >
           CAGED shapes
         </button>
+        <button
+          type="button"
+          aria-pressed={focusOn}
+          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: focusOn ? "var(--accent)" : "transparent", color: focusOn ? "var(--on-accent)" : "var(--accent)", fontWeight: 700 }}
+          onClick={() => setFocusOn((v) => !v)}
+        >
+          {focusOn ? "Show all" : "Focus"}
+        </button>
+        {focusOn && (
+          <div role="group" aria-label="Focus range" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <button type="button" aria-label="Move range down" disabled={focusLo <= 0} style={{ minHeight: 40, minWidth: 44, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)" }} onClick={() => shiftFocus(-1)}>
+              ‹
+            </button>
+            <span style={{ minWidth: 92, textAlign: "center", fontWeight: 700, color: "var(--text-primary)" }}>Frets {focusLo}–{focusHi}</span>
+            <button type="button" aria-label="Move range up" disabled={focusHi >= FRETS} style={{ minHeight: 40, minWidth: 44, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)" }} onClick={() => shiftFocus(1)}>
+              ›
+            </button>
+            <button type="button" aria-label="Fewer frets" disabled={focusW <= 4} style={{ minHeight: 40, minWidth: 40, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)", marginLeft: 6 }} onClick={() => setFocusW((w) => Math.max(4, w - 1))}>
+              −
+            </button>
+            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{focusW} frets</span>
+            <button type="button" aria-label="More frets" disabled={focusW >= 8} style={{ minHeight: 40, minWidth: 40, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)" }} onClick={() => setFocusW((w) => Math.min(8, w + 1))}>
+              +
+            </button>
+          </div>
+        )}
         <div role="group" aria-label="Note labels" style={{ display: "inline-flex", border: "1px solid var(--border-strong)", borderRadius: 999, overflow: "hidden", marginLeft: "auto" }}>
           {([["key", "Do Re Mi"], ["chord", "1 3 5 7"]] as const).map(([m, label]) => (
             <button
@@ -3132,32 +3148,9 @@ export default function StaffToFretboard({
         )}
         {shapesOn && shapeQuality && (
           <>
-            <button type="button" aria-pressed={shapeSel === null} style={{ minHeight: 40, padding: "0 12px", borderRadius: 999, border: "1px solid var(--border-strong)", background: shapeSel === null ? "var(--surface-2)" : "transparent", color: "var(--text-primary)" }} onClick={() => {
-              setShapeSel(null);
-              setFocusOn(false);
-            }}>
+            <button type="button" aria-pressed={shapeSel === null} style={{ minHeight: 40, padding: "0 12px", borderRadius: 999, border: "1px solid var(--border-strong)", background: shapeSel === null ? "var(--surface-2)" : "transparent", color: "var(--text-primary)" }} onClick={() => setShapeSel(null)}>
               All
             </button>
-            {shapeSel !== null && (
-              <button
-                type="button"
-                aria-pressed={focusOn}
-                style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: focusOn ? "var(--accent)" : "transparent", color: focusOn ? "var(--on-accent)" : "var(--accent)", fontWeight: 700 }}
-                onClick={() => setFocusOn((v) => !v)}
-              >
-                {focusOn ? "Show all" : "Focus"}
-              </button>
-            )}
-            {focusShape && (
-              <>
-                <button type="button" aria-label="Previous shape (lower frets)" style={{ minHeight: 40, minWidth: 44, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)" }} onClick={() => stepShape(-1)}>
-                  ‹
-                </button>
-                <button type="button" aria-label="Next shape (higher frets)" style={{ minHeight: 40, minWidth: 44, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)" }} onClick={() => stepShape(1)}>
-                  ›
-                </button>
-              </>
-            )}
             {shapeList.map((sh) => (
               <button
                 key={sh.name}
@@ -3166,7 +3159,7 @@ export default function StaffToFretboard({
                 style={{ minHeight: 40, minWidth: 48, borderRadius: 999, border: `2px solid ${SHAPE_COLORS[sh.name]}`, background: shapeSel === sh.name ? SHAPE_COLORS[sh.name] : "transparent", color: shapeSel === sh.name ? "#1a1511" : "var(--text-primary)", fontWeight: 700 }}
                 onClick={() => {
                   setShapeSel(shapeSel === sh.name ? null : sh.name);
-                  if (shapeSel === sh.name) setFocusOn(false);
+                  if (focusOn && shapeSel !== sh.name) setFocusLoState(Math.max(0, Math.min(...sh.notes.map((n) => n.f)) - 1));
                 }}
               >
                 {sh.name} · {sh.start === 0 ? "open" : `fret ${sh.start}`}
