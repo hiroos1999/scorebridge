@@ -3090,7 +3090,7 @@ export default function StaffToFretboard({
         </button>
         {shapesOn && !shapeQuality && (
           <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-            Shapes are available for maj7, 7, 6, m7, m6 and mMaj7 chords. Place or select one of these chords.
+            Shapes are available for maj7, 7, 6, m7, m6, mMaj7, dim and m7♭5 chords. Place or select one of these chords.
           </span>
         )}
         {shapesOn && shapeQuality && (

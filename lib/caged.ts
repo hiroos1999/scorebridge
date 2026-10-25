@@ -21,20 +21,25 @@ export const SHAPE_ORDER: ShapeName[] = ["E", "D", "C", "A", "G"];
 
 const MAJOR_FORM_KINDS = new Set(["maj7", "7", "6"]);
 const MINOR_FORM_KINDS = new Set(["m7", "m6", "mMaj7"]);
+// 減三和音系(dim, m7b5)はマイナーの形の5度を半音下げる
+const DIM_FORM_KINDS = new Set(["dim", "m7b5"]);
 
-export function shapeQualityFor(kind: string): "major" | "minor" | null {
+export type ShapeQuality = "major" | "minor" | "dim";
+
+export function shapeQualityFor(kind: string): ShapeQuality | null {
   if (MAJOR_FORM_KINDS.has(kind)) return "major";
   if (MINOR_FORM_KINDS.has(kind)) return "minor";
+  if (DIM_FORM_KINDS.has(kind)) return "dim";
   return null;
 }
 
 // 指板(0〜maxFret)に収まる範囲で、シェイプの音の位置を返す。
-export function shapeNotes(name: ShapeName, root: number, quality: "major" | "minor", maxFret = 12): { start: number; notes: ShapeNote[] } {
+export function shapeNotes(name: ShapeName, root: number, quality: ShapeQuality, maxFret = 12): { start: number; notes: ShapeNote[] } {
   const { key, form } = SHAPES[name];
   const start = (((root - key) % 12) + 12) % 12;
   const rel = Object.entries(form).map(([s, [r, role]]) => ({
     s: Number(s),
-    r: quality === "minor" && role === "3" ? r - 1 : r,
+    r: (quality !== "major" && role === "3" ? r - 1 : r) - (quality === "dim" && role === "5" ? 1 : 0),
     role,
   }));
   // マイナーで開放位置より下に出る場合は、1オクターブ上の位置を使う
