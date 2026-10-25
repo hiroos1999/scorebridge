@@ -845,13 +845,15 @@ export default function StaffToFretboard({
     minPitch: number,
     maxPitch: number,
     durationSec: number,
-    peakGain: number
+    peakGain: number,
+    at?: number
   ) {
     const ctx = ensureAudioContext();
     const clamped = clampToSampleRange(absPitch, minPitch, maxPitch);
     const buffer = cache.get(clamped);
     if (!buffer) return; // 通常はPlay開始前にロード済みのため起きない
-    const now = ctx.currentTime;
+    // at: AudioContext時計での開始時刻(先読みスケジューラ用)。省略時は今すぐ。
+    const now = Math.max(at ?? 0, ctx.currentTime);
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -871,22 +873,22 @@ export default function StaffToFretboard({
     source.stop(now + durationSec + 0.05);
   }
 
-  function playMelodyTone(absPitch: number, durationSec: number) {
-    playSample(melodySampleCacheRef.current, absPitch, MELODY_SAMPLE_MIN_ABS_PITCH, MELODY_SAMPLE_MAX_ABS_PITCH, durationSec, 0.9);
+  function playMelodyTone(absPitch: number, durationSec: number, at?: number) {
+    playSample(melodySampleCacheRef.current, absPitch, MELODY_SAMPLE_MIN_ABS_PITCH, MELODY_SAMPLE_MAX_ABS_PITCH, durationSec, 0.9, at);
   }
 
-  function playBassTone(absPitch: number, durationSec: number) {
+  function playBassTone(absPitch: number, durationSec: number, at?: number) {
     // 低音は等ラウドネス曲線の影響で同じgain値でも高い音より小さく聞こえるため、
     // メロディ(0.9)よりgain自体を大きめにしている（サンプルの実測ピークは
     // 約-18dBなので、この値でもクリップの心配はない）。
-    playSample(bassSampleCacheRef.current, absPitch, BASS_MIN_ABS_PITCH, BASS_MAX_ABS_PITCH, durationSec, 1.8);
+    playSample(bassSampleCacheRef.current, absPitch, BASS_MIN_ABS_PITCH, BASS_MAX_ABS_PITCH, durationSec, 1.8, at);
   }
 
   // ピアノ風の薄いコンピング。ハーモニー(コード)の開始タイミングごとに、
   // buildChordVoicingと同じボイシングを1オクターブ下げて短く鳴らす
   // （メロディ・ウォーキングベースの主役を邪魔しないよう、音量は控えめ・
   // 音価もそのコード区間いっぱいではなく短いスタブに留める）。
-  function playCompChord(rootPc: number, chordType: string, inversion: number, durationSec: number) {
+  function playCompChord(rootPc: number, chordType: string, inversion: number, durationSec: number, at?: number) {
     const absPitches = buildChordVoicingAbsPitches(rootPc, chordType, inversion);
     absPitches.forEach((abs) => {
       playSample(
@@ -895,7 +897,8 @@ export default function StaffToFretboard({
         COMP_SAMPLE_MIN_ABS_PITCH,
         COMP_SAMPLE_MAX_ABS_PITCH,
         durationSec,
-        0.42
+        0.42,
+        at
       );
     });
   }
@@ -903,11 +906,11 @@ export default function StaffToFretboard({
   // ドラムは音価を持たない単発トリガーなので、音符/ベースのようなdurationSec
   // 指定は不要（サンプル自体の自然な減衰に任せる）。ライドだけは音の重なりで
   // 濁らないよう、DRUM_VOICE_MAX_DURATION_SECの長さでフェードアウトさせる。
-  function playDrumHit(voice: DrumVoice) {
+  function playDrumHit(voice: DrumVoice, at?: number) {
     const ctx = ensureAudioContext();
     const buffer = drumSampleCacheRef.current.get(voice);
     if (!buffer) return; // 通常はPlay開始前にロード済みのため起きない
-    const now = ctx.currentTime;
+    const now = Math.max(at ?? 0, ctx.currentTime);
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -1045,46 +1048,68 @@ export default function StaffToFretboard({
     // 再生開始時点で、最初のイベントが属する小節にただちに表示を合わせる。
     setCurrentMeasureIndex(events[0].measureIndex);
 
-    events.forEach((ev) => {
-      const timeoutId = setTimeout(() => {
-        // 再生中の音符/コードが属する小節に自動的に表示を追従させる。
+    // 音は「AudioContextの時計」に先読みでスケジュールする(画面の再描画が重くても
+    // 音のタイミングがぶれない)。画面の更新(ハイライト・小節追従)は、その音と
+    // 同じ時刻にタイマーで行う。
+    const actx = ensureAudioContext();
+    const LEAD_SEC = 0.15;
+    const LOOKAHEAD_SEC = 0.25;
+    const t0 = actx.currentTime + LEAD_SEC;
+    let nextIdx = 0;
+    const fire = (ev: PlaybackEvent, at: number) => {
+      const toneSec = (ev.endMs - ev.atMs) / 1000;
+      // 音(先読みスケジュール)
+      if (ev.kind === "note") {
+        const note = ev.note;
+        if (!note.isRest && note.rowIdxList.length > 0) {
+          note.rowIdxList.forEach((rowIdx) => {
+            const absPitch = rows[rowIdx].octave * 12 + rows[rowIdx].pc + (note.accidentals[rowIdx] ?? 0);
+            playMelodyTone(absPitch, toneSec, at);
+          });
+        }
+      } else if (ev.kind === "bass") {
+        // 音符同士をわずかに切り離し、指ではじくベースらしい粒立ちを出す。
+        playBassTone(ev.absPitch, toneSec * 0.92, at);
+      } else if (ev.kind === "drum") {
+        playDrumHit(ev.voice, at);
+      } else {
+        // ピアノ風の薄いコンピング(実際の低音はウォーキングベースが担当)。
+        playCompChord(ev.harmony.root, ev.harmony.kind, ev.harmony.inversion, Math.min(toneSec, COMP_STAB_MAX_SEC), at);
+      }
+      // 画面(ハイライト)は音と同じ時刻に更新する。ドラムは画面に出さない。
+      if (ev.kind === "drum" || ev.kind === "bass") return;
+      const delayMs = Math.max(0, (at - actx.currentTime) * 1000);
+      const visualId = setTimeout(() => {
         setCurrentMeasureIndex(ev.measureIndex);
-        const toneSec = (ev.endMs - ev.atMs) / 1000;
         if (ev.kind === "note") {
           const note = ev.note;
-          if (!note.isRest && note.rowIdxList.length > 0) {
-            setPlayingNoteKey({ measureIndex: ev.measureIndex, startGrid: note.startGrid });
-            // 和音（手動積み上げ）の場合は含まれる全ての音を同じタイミングで鳴らす。
-            note.rowIdxList.forEach((rowIdx) => {
-              const absPitch = rows[rowIdx].octave * 12 + rows[rowIdx].pc + (note.accidentals[rowIdx] ?? 0);
-              playMelodyTone(absPitch, toneSec);
-            });
-          } else {
-            // 休符の間は、前の音符のハイライトが残ったままにならないよう解除する。
-            setPlayingNoteKey(null);
-          }
-        } else if (ev.kind === "bass") {
-          // 音符同士をわずかに切り離し、指ではじくベースらしい粒立ちを出す。
-          playBassTone(ev.absPitch, toneSec * 0.92);
-        } else if (ev.kind === "drum") {
-          playDrumHit(ev.voice);
-        } else {
-          // harmonyのタイミングでコードハイライト表示を更新しつつ、ピアノ風の
-          // 薄いコンピングも鳴らす（実際の低音はkind:"bass"のウォーキングベースが
-          // 担当するので、コンピングはあくまで響きを添えるだけの短いスタブ）。
+          if (!note.isRest && note.rowIdxList.length > 0) setPlayingNoteKey({ measureIndex: ev.measureIndex, startGrid: note.startGrid });
+          else setPlayingNoteKey(null); // 休符の間は前の音符のハイライトを消す
+        } else if (ev.kind === "harmony") {
           setPlayingHarmonyKey({ measureIndex: ev.measureIndex, offsetGrid: ev.harmony.offsetGrid });
-          playCompChord(ev.harmony.root, ev.harmony.kind, ev.harmony.inversion, Math.min(toneSec, COMP_STAB_MAX_SEC));
         }
-      }, ev.atMs);
-      timeoutIdsRef.current.push(timeoutId);
-    });
+      }, delayMs);
+      timeoutIdsRef.current.push(visualId);
+    };
+    const pump = () => {
+      const horizon = actx.currentTime + LOOKAHEAD_SEC;
+      while (nextIdx < events.length && t0 + events[nextIdx].atMs / 1000 < horizon) {
+        const ev = events[nextIdx];
+        fire(ev, t0 + ev.atMs / 1000);
+        nextIdx += 1;
+      }
+    };
+    pump();
+    const pumpId = setInterval(pump, 25);
+    timeoutIdsRef.current.push(pumpId as unknown as ReturnType<typeof setTimeout>);
 
     const endTimeoutId = setTimeout(() => {
+      clearInterval(pumpId);
       setIsPlaying(false);
       setPlayingNoteKey(null);
       setPlayingHarmonyKey(null);
       onFinished?.();
-    }, overallEndMs);
+    }, overallEndMs + LEAD_SEC * 1000);
     timeoutIdsRef.current.push(endTimeoutId);
   }
 
