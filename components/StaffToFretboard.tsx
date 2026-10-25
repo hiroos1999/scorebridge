@@ -17,6 +17,9 @@ import { ChordIcon, FlatIcon, RestIcon, SharpIcon, TripletIcon } from "@/compone
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
 const DEGREE_NAMES = ["Do", "Di", "Re", "Me", "Mi", "Fa", "Fi", "Sol", "Le", "La", "Te", "Ti"];
+// コード基準の度数表記(半音数 → 表記)。ルート=1、3度=3/♭3、5度=5/♭5、7度=7/♭7。
+const CHORD_DEGREE_NAMES = ["1", "♭9", "9", "♭3", "3", "11", "♭5", "5", "♭13", "13", "♭7", "7"];
+const CHORD_DEGREE_ROLE = ["danger", "gray", "pro", "warning", "warning", "accent", "success", "success", "gray", "pro", "success", "success"];
 const DEGREE_ROLE = [
   "danger",
   "gray",
@@ -653,6 +656,7 @@ export default function StaffToFretboard({
   const [mode, setMode] = useState<"tones" | "rhythm">("tones");
   const [editOpen, setEditOpen] = useState(false);
   const [shapesOn, setShapesOn] = useState(false);
+  const [labelMode, setLabelMode] = useState<"key" | "chord">("key");
   const [shapeSel, setShapeSel] = useState<ShapeName | null>(null);
   // ONの間、新規配置する音符・休符を3連符にする（休符モードと同様のトグル）。
   const [tripletMode, setTripletMode] = useState(false);
@@ -3088,6 +3092,19 @@ export default function StaffToFretboard({
         >
           CAGED shapes
         </button>
+        <div role="group" aria-label="Note labels" style={{ display: "inline-flex", border: "1px solid var(--border-strong)", borderRadius: 999, overflow: "hidden", marginLeft: "auto" }}>
+          {([["key", "Do Re Mi"], ["chord", "1 3 5 7"]] as const).map(([m, label]) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={labelMode === m}
+              style={{ minHeight: 40, padding: "0 14px", border: "none", borderRadius: 0, background: labelMode === m ? "var(--accent)" : "transparent", color: labelMode === m ? "var(--on-accent)" : "var(--text-primary)", fontWeight: labelMode === m ? 700 : 500 }}
+              onClick={() => setLabelMode(m)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {shapesOn && !shapeQuality && (
           <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
             Shapes are available for maj7, 7, 6, m7, m6, mMaj7, dim and m7♭5 chords. Place or select one of these chords.
@@ -3243,8 +3260,17 @@ export default function StaffToFretboard({
                   const isHarmonyTone = !isMelody && harmonyPitchClasses.has(pc);
                   if (!isMelody && !isHarmonyTone) return null;
                   const x = fbLeft + (f === 0 ? 0 : f * fretW - fretW / 2);
-                  const deg = degreeFor(pc, root);
-                  const [fill] = colorFor(DEGREE_ROLE[deg]);
+                  const useChordDeg = labelMode === "chord" && !!displayedHarmony;
+                  const deg = degreeFor(pc, useChordDeg && displayedHarmony ? displayedHarmony.root : root);
+                  const [fill] = colorFor((useChordDeg ? CHORD_DEGREE_ROLE : DEGREE_ROLE)[deg]);
+                  const chordLabel =
+                    deg === 9 && displayedHarmony
+                      ? displayedHarmony.kind === "dim"
+                        ? "♭♭7"
+                        : displayedHarmony.kind.includes("6")
+                          ? "6"
+                          : "13"
+                      : CHORD_DEGREE_NAMES[deg];
                   const isPlaying = playingAbsPitches.has(absPitch);
                   return (
                     <g key={f}>
@@ -3280,7 +3306,7 @@ export default function StaffToFretboard({
                           paintOrder: "stroke",
                         }}
                       >
-                        {DEGREE_NAMES[deg]}
+                        {useChordDeg ? chordLabel : DEGREE_NAMES[deg]}
                       </text>
                     </g>
                   );
@@ -3296,14 +3322,24 @@ export default function StaffToFretboard({
         aria-label="Colour key"
         style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}
       >
-        {[
-          { label: "Do · root", role: "danger" },
-          { label: "Mi · 3rd", role: "warning" },
-          { label: "Fa · 4th", role: "accent" },
-          { label: "Sol, Ti · 5th, 7th", role: "success" },
-          { label: "Re, La · 2nd, 6th", role: "pro" },
-          { label: "Chromatic", role: "gray" },
-        ].map((it) => (
+        {(labelMode === "chord"
+          ? [
+              { label: "1 · root", role: "danger" },
+              { label: "3, ♭3 · 3rd", role: "warning" },
+              { label: "11 · 4th", role: "accent" },
+              { label: "♭5, 5, ♭7, 7", role: "success" },
+              { label: "9, 6/13", role: "pro" },
+              { label: "Other", role: "gray" },
+            ]
+          : [
+              { label: "Do · root", role: "danger" },
+              { label: "Mi · 3rd", role: "warning" },
+              { label: "Fa · 4th", role: "accent" },
+              { label: "Sol, Ti · 5th, 7th", role: "success" },
+              { label: "Re, La · 2nd, 6th", role: "pro" },
+              { label: "Chromatic", role: "gray" },
+            ]
+        ).map((it) => (
           <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
             <span
               aria-hidden
