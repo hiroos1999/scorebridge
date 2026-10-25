@@ -9,6 +9,7 @@ import { PRACTICE_ORDERS, prefersFlats, transposeMeasures } from "@/lib/transpos
 import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/patterns";
 import { parseMusicXmlFile } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
+import { SHAPE_ORDER, shapeNotes, shapeQualityFor, type ShapeName } from "@/lib/caged";
 import IconButton from "@/components/IconButton";
 import RhythmPractice from "@/components/RhythmPractice";
 import { ChordIcon, FlatIcon, RestIcon, SharpIcon, TripletIcon } from "@/components/MusicIcons";
@@ -651,6 +652,8 @@ export default function StaffToFretboard({
   const [restMode, setRestMode] = useState(false);
   const [mode, setMode] = useState<"tones" | "rhythm">("tones");
   const [editOpen, setEditOpen] = useState(false);
+  const [shapesOn, setShapesOn] = useState(false);
+  const [shapeSel, setShapeSel] = useState<ShapeName | null>(null);
   // ONの間、新規配置する音符・休符を3連符にする（休符モードと同様のトグル）。
   const [tripletMode, setTripletMode] = useState(false);
   const [fullFeedback, setFullFeedback] = useState(false);
@@ -1629,6 +1632,16 @@ export default function StaffToFretboard({
       (CHORD_TYPES[h.kind] ?? []).map((interval) => (h.root + interval) % 12)
     )
   );
+
+  // CAGEDシェイプ: 表示中のコードがmaj7/7/6/m7/m6/mMaj7のときだけ有効
+  const SHAPE_COLORS: Record<ShapeName, string> = { E: "#4b8be0", D: "#a07be0", C: "#e0574b", A: "#e0b84a", G: "#4bb38b" };
+  const shapeQuality = displayedHarmony ? shapeQualityFor(displayedHarmony.kind) : null;
+  const shapeList =
+    shapesOn && displayedHarmony && shapeQuality
+      ? SHAPE_ORDER.map((name) => ({ name, ...shapeNotes(name, displayedHarmony.root, shapeQuality, FRETS) })).filter((sh) => sh.notes.length >= 2)
+      : [];
+  const visibleShapes = shapeList.filter((sh) => shapeSel === null || sh.name === shapeSel);
+  const shapeNoteKeys = new Set(visibleShapes.flatMap((sh) => sh.notes.map((n) => `${n.s}:${n.f}`)));
 
   const fbLeft = 100;
   const fbTop = 30;
@@ -3062,6 +3075,43 @@ export default function StaffToFretboard({
       </section>
 
       <section className="sb-board">
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
+        <button
+          type="button"
+          aria-pressed={shapesOn}
+          className={shapesOn ? "sb-seg-on" : undefined}
+          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: shapesOn ? "var(--accent)" : "transparent", color: shapesOn ? "var(--on-accent)" : "var(--accent)", fontWeight: 700 }}
+          onClick={() => {
+            setShapesOn((v) => !v);
+            setShapeSel(null);
+          }}
+        >
+          CAGED shapes
+        </button>
+        {shapesOn && !shapeQuality && (
+          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            Shapes are available for maj7, 7, 6, m7, m6 and mMaj7 chords. Place or select one of these chords.
+          </span>
+        )}
+        {shapesOn && shapeQuality && (
+          <>
+            <button type="button" aria-pressed={shapeSel === null} style={{ minHeight: 40, padding: "0 12px", borderRadius: 999, border: "1px solid var(--border-strong)", background: shapeSel === null ? "var(--surface-2)" : "transparent", color: "var(--text-primary)" }} onClick={() => setShapeSel(null)}>
+              All
+            </button>
+            {shapeList.map((sh) => (
+              <button
+                key={sh.name}
+                type="button"
+                aria-pressed={shapeSel === sh.name}
+                style={{ minHeight: 40, minWidth: 48, borderRadius: 999, border: `2px solid ${SHAPE_COLORS[sh.name]}`, background: shapeSel === sh.name ? SHAPE_COLORS[sh.name] : "transparent", color: shapeSel === sh.name ? "#1a1511" : "var(--text-primary)", fontWeight: 700 }}
+                onClick={() => setShapeSel(shapeSel === sh.name ? null : sh.name)}
+              >
+                {sh.name} · {sh.start === 0 ? "open" : `fret ${sh.start}`}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
       <div id="fretboard-wrap">
         <svg
           id="fretboard"
@@ -3069,6 +3119,24 @@ export default function StaffToFretboard({
           style={{ width: "100%", height: "auto", display: "block", minWidth: narrowFretboard ? undefined : "660px" }}
         >
           <defs>
+            {(Object.keys(SHAPE_COLORS) as ShapeName[]).map((k) => (
+              <g key={k}>
+                <filter id={`shape-ring-${k}`} filterUnits="userSpaceOnUse" x="0" y="-14" width="940" height="234" colorInterpolationFilters="sRGB">
+                  <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="b" />
+                  <feComponentTransfer in="b" result="A"><feFuncA type="linear" slope="30" intercept="-10" /></feComponentTransfer>
+                  <feMorphology in="A" operator="erode" radius="2.5" result="E" />
+                  <feComposite in="A" in2="E" operator="out" result="R" />
+                  <feFlood floodColor={SHAPE_COLORS[k]} result="C" />
+                  <feComposite in="C" in2="R" operator="in" />
+                </filter>
+                <filter id={`shape-fill-${k}`} filterUnits="userSpaceOnUse" x="0" y="-14" width="940" height="234" colorInterpolationFilters="sRGB">
+                  <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="b" />
+                  <feComponentTransfer in="b" result="A"><feFuncA type="linear" slope="30" intercept="-10" /></feComponentTransfer>
+                  <feFlood floodColor={SHAPE_COLORS[k]} result="C" />
+                  <feComposite in="C" in2="A" operator="in" />
+                </filter>
+              </g>
+            ))}
             <linearGradient id="ebony" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stopColor="#34251b" />
               <stop offset="0.5" stopColor="#241912" />
@@ -3144,6 +3212,24 @@ export default function StaffToFretboard({
             );
           })}
 
+          {visibleShapes.map((sh) => {
+            const fxs = (f: number) => fbLeft + (f === 0 ? 0 : f * fretW - fretW / 2);
+            const pts = sh.notes;
+            const circles = pts.map((n) => <circle key={`c${n.s}-${n.f}`} cx={fxs(n.f)} cy={fbTop + n.s * stringGap} r={23} fill="#fff" />);
+            const links = pts.flatMap((a) => {
+              const next = pts.filter((b) => b.s === a.s + 1).sort((p, q) => Math.abs(p.f - a.f) - Math.abs(q.f - a.f))[0];
+              return next
+                ? [<line key={`l${a.s}-${a.f}`} x1={fxs(a.f)} y1={fbTop + a.s * stringGap} x2={fxs(next.f)} y2={fbTop + next.s * stringGap} stroke="#fff" strokeWidth={40} strokeLinecap="round" />]
+                : [];
+            });
+            return (
+              <g key={`shape-${sh.name}`} pointerEvents="none">
+                <g filter={`url(#shape-fill-${sh.name})`} opacity={0.16}>{circles}{links}</g>
+                <g filter={`url(#shape-ring-${sh.name})`}>{circles}{links}</g>
+              </g>
+            );
+          })}
+
           {strings.map((st, sIdx) => {
             const y = fbTop + sIdx * stringGap;
             return (
@@ -3178,7 +3264,7 @@ export default function StaffToFretboard({
                         cy={y}
                         r={isPlaying ? 17 : 15}
                         style={{ fill }}
-                        opacity={isHarmonyTone ? 0.45 : 1}
+                        opacity={isHarmonyTone && !shapeNoteKeys.has(`${sIdx}:${f}`) ? 0.45 : 1}
                       />
                       <text
                         x={x}
@@ -3186,7 +3272,7 @@ export default function StaffToFretboard({
                         textAnchor="middle"
                         fontSize={13}
                         fontWeight="bold"
-                        opacity={isHarmonyTone ? 0.7 : 1}
+                        opacity={isHarmonyTone && !shapeNoteKeys.has(`${sIdx}:${f}`) ? 0.7 : 1}
                         style={{
                           fill: "#ffffff",
                           stroke: "rgba(0,0,0,0.55)",
