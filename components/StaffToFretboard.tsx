@@ -187,7 +187,7 @@ const strings = [
   { open: 9, octave: 2, num: 5, label: "A" },
   { open: 4, octave: 2, num: 6, label: "E" },
 ];
-const FRETS = 12;
+const FRETS = 17; // 描画・データの最大フレット(通常表示は viewFrets で12/17を切り替える)
 
 function degreeFor(pc: number, root: number) {
   return (((pc - root) % 12) + 12) % 12;
@@ -657,6 +657,7 @@ export default function StaffToFretboard({
   const [editOpen, setEditOpen] = useState(false);
   const [shapesOn, setShapesOn] = useState(false);
   const [focusOn, setFocusOn] = useState(false);
+  const [viewFrets, setViewFrets] = useState<12 | 17>(12);
   const [focusLoState, setFocusLoState] = useState(3);
   const [focusW, setFocusW] = useState(5);
   const [labelMode, setLabelMode] = useState<"key" | "chord">("key");
@@ -1654,7 +1655,13 @@ export default function StaffToFretboard({
   const shiftFocus = (d: number) => setFocusLoState(Math.max(0, Math.min(FRETS - focusW + 1, focusLo + d)));
   const focusX0 = focusShape ? (focusLo === 0 ? 0 : 100 + (focusLo - 1) * 68 - 34) : 0;
   const focusX1 = focusShape ? 100 + focusHi * 68 + 12 : 940;
-  const visibleShapes = shapeList.filter((sh) => shapeSel === null || sh.name === shapeSel);
+  const wholeX1 = viewFrets === 17 ? 100 + 17 * 68 + 24 : 940;
+  // 12フレット目より上の位置(1オクターブ上のシェイプ)も描く
+  const shapeInstances = shapeList.flatMap((sh) => {
+    const up = shapeQuality && displayedHarmony ? shapeNotes(sh.name, displayedHarmony.root, shapeQuality, FRETS, 1) : null;
+    return up && up.full ? [sh, { name: sh.name, ...up }] : [sh];
+  });
+  const visibleShapes = shapeInstances.filter((sh) => shapeSel === null || sh.name === shapeSel);
   const shapeNoteKeys = new Set(visibleShapes.flatMap((sh) => sh.notes.map((n) => `${n.s}:${n.f}`)));
 
   const fbLeft = 100;
@@ -3128,6 +3135,15 @@ export default function StaffToFretboard({
             </button>
           </div>
         )}
+        {!focusOn && (
+          <div role="group" aria-label="Visible frets" style={{ display: "inline-flex", border: "1px solid var(--border-strong)", borderRadius: 999, overflow: "hidden" }}>
+            {([12, 17] as const).map((n) => (
+              <button key={n} type="button" aria-pressed={viewFrets === n} style={{ minHeight: 40, padding: "0 12px", border: "none", borderRadius: 0, background: viewFrets === n ? "var(--surface-2)" : "transparent", color: "var(--text-primary)", fontWeight: viewFrets === n ? 700 : 500 }} onClick={() => setViewFrets(n)}>
+                {n} frets
+              </button>
+            ))}
+          </div>
+        )}
         <div role="group" aria-label="Note labels" style={{ display: "inline-flex", border: "1px solid var(--border-strong)", borderRadius: 999, overflow: "hidden", marginLeft: "auto" }}>
           {([["key", "Do Re Mi"], ["chord", "1 3 5 7"]] as const).map(([m, label]) => (
             <button
@@ -3171,13 +3187,13 @@ export default function StaffToFretboard({
       <div id="fretboard-wrap">
         <svg
           id="fretboard"
-          viewBox={focusShape ? `${focusX0} -14 ${focusX1 - focusX0} 234` : narrowFretboard ? `0 -14 ${fbLeft + 7 * fretW + 8} 234` : "0 -14 940 234"}
-          style={{ width: "100%", height: "auto", display: "block", minWidth: focusShape || narrowFretboard ? undefined : "660px" }}
+          viewBox={focusShape ? `${focusX0} -14 ${focusX1 - focusX0} 234` : narrowFretboard ? `0 -14 ${fbLeft + 7 * fretW + 8} 234` : `0 -14 ${wholeX1} 234`}
+          style={{ width: "100%", height: "auto", display: "block", minWidth: focusShape || narrowFretboard ? undefined : viewFrets === 17 ? "880px" : "660px" }}
         >
           <defs>
             {(Object.keys(SHAPE_COLORS) as ShapeName[]).map((k) => (
               <g key={k}>
-                <filter id={`shape-ring-${k}`} filterUnits="userSpaceOnUse" x="0" y="-14" width="940" height="234" colorInterpolationFilters="sRGB">
+                <filter id={`shape-ring-${k}`} filterUnits="userSpaceOnUse" x="0" y="-14" width="1400" height="234" colorInterpolationFilters="sRGB">
                   <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="b" />
                   <feComponentTransfer in="b" result="A"><feFuncA type="linear" slope="30" intercept="-10" /></feComponentTransfer>
                   <feMorphology in="A" operator="erode" radius="2.5" result="E" />
@@ -3185,7 +3201,7 @@ export default function StaffToFretboard({
                   <feFlood floodColor={SHAPE_COLORS[k]} result="C" />
                   <feComposite in="C" in2="R" operator="in" />
                 </filter>
-                <filter id={`shape-fill-${k}`} filterUnits="userSpaceOnUse" x="0" y="-14" width="940" height="234" colorInterpolationFilters="sRGB">
+                <filter id={`shape-fill-${k}`} filterUnits="userSpaceOnUse" x="0" y="-14" width="1400" height="234" colorInterpolationFilters="sRGB">
                   <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="b" />
                   <feComponentTransfer in="b" result="A"><feFuncA type="linear" slope="30" intercept="-10" /></feComponentTransfer>
                   <feFlood floodColor={SHAPE_COLORS[k]} result="C" />
@@ -3208,7 +3224,7 @@ export default function StaffToFretboard({
             fill="url(#ebony)"
           />
           {/* ポジションマーク(パールのインレイ): 3・5・7・9フレットは1つ、12フレットは2つ */}
-          {[3, 5, 7, 9].map((f) => (
+          {[3, 5, 7, 9, 15, 17].map((f) => (
             <circle key={`inlay-${f}`} cx={fbLeft + f * fretW - fretW / 2} cy={fbTop + 2.5 * stringGap} r={5} fill="#e8e2d2" opacity={0.22} />
           ))}
           {[1.5, 3.5].map((k) => (
@@ -3227,7 +3243,7 @@ export default function StaffToFretboard({
                   stroke={f === 0 ? "#d8d2c4" : "#8d877b"}
                   strokeWidth={f === 0 ? 5 : 2}
                 />
-                {(focusShape ? f >= focusLo && f <= focusHi : [3, 5, 7, 9, 12].includes(f)) && f > 0 && (
+                {(focusShape ? f >= focusLo && f <= focusHi : [3, 5, 7, 9, 12, 15, 17].includes(f)) && f > 0 && (
                   <text
                     x={x - fretW / 2}
                     y={fbTop - 21}
@@ -3281,7 +3297,7 @@ export default function StaffToFretboard({
                 : [];
             });
             return (
-              <g key={`shape-${sh.name}`} pointerEvents="none">
+              <g key={`shape-${sh.name}-${sh.start}`} pointerEvents="none">
                 <g filter={`url(#shape-fill-${sh.name})`} opacity={0.16}>{circles}{links}</g>
                 <g filter={`url(#shape-ring-${sh.name})`}>{circles}{links}</g>
               </g>

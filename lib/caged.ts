@@ -34,7 +34,7 @@ export function shapeQualityFor(kind: string): ShapeQuality | null {
 }
 
 // 指板(0〜maxFret)に収まる範囲で、シェイプの音の位置を返す。
-export function shapeNotes(name: ShapeName, root: number, quality: ShapeQuality, maxFret = 12): { start: number; notes: ShapeNote[] } {
+export function shapeNotes(name: ShapeName, root: number, quality: ShapeQuality, maxFret = 12, octaveUp = 0): { start: number; full: boolean; notes: ShapeNote[] } {
   const { key, form } = SHAPES[name];
   const start = (((root - key) % 12) + 12) % 12;
   const rel = Object.entries(form).map(([s, [r, role]]) => ({
@@ -43,9 +43,11 @@ export function shapeNotes(name: ShapeName, root: number, quality: ShapeQuality,
     role,
   }));
   // マイナーで開放位置より下に出る場合は、1オクターブ上の位置を使う
-  const base = start + Math.min(...rel.map((n) => n.r)) < 0 ? start + 12 : start;
+  const base = (start + Math.min(...rel.map((n) => n.r)) < 0 ? start + 12 : start) + 12 * octaveUp;
+  const all = rel.map((n) => ({ s: n.s, f: base + n.r, role: n.role }));
   return {
     start: base,
-    notes: rel.map((n) => ({ s: n.s, f: base + n.r, role: n.role })).filter((n) => n.f <= maxFret),
+    full: all.every((n) => n.f <= maxFret),
+    notes: all.filter((n) => n.f <= maxFret),
   };
 }
