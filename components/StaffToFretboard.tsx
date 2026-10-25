@@ -2308,6 +2308,9 @@ export default function StaffToFretboard({
         .sb-seg { display:flex; align-items:center; gap:4px; padding:4px; background: var(--surface-1); border:1px solid var(--border); border-radius:12px; }
         .sb-seg button { border:none; background:transparent; font-weight:500; padding:0 16px; height:36px; color: var(--text-secondary); }
         .sb-seg button.sb-seg-on, .sb-seg button.sb-seg-on:hover { background: var(--accent); color: var(--on-accent); font-weight:700; }
+        .sb-glow { transform-box: fill-box; transform-origin: center; animation: sb-glow-pulse 0.9s ease-in-out infinite alternate; }
+        @keyframes sb-glow-pulse { from { transform: scale(0.85); opacity: 0.75; } to { transform: scale(1.1); opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .sb-glow { animation: none; } }
         .sb-summary { display:flex; flex-basis:100%; align-items:center; gap:14px; flex-wrap:wrap; font-size:13px; color: var(--text-secondary); padding:0 2px; }
         .sb-summary button { margin-left:auto; background: transparent; border-color: rgba(217,182,90,0.55); color: var(--accent); border-radius:999px; padding:0 14px; font-weight:600; }
         .sb-edit { align-items:flex-start; }
@@ -3209,6 +3212,11 @@ export default function StaffToFretboard({
                 </filter>
               </g>
             ))}
+            <radialGradient id="sb-glow-grad">
+              <stop offset="0.35" stopColor="#fff3c0" stopOpacity="0.95" />
+              <stop offset="0.7" stopColor="#ffd75e" stopOpacity="0.45" />
+              <stop offset="1" stopColor="#ffd75e" stopOpacity="0" />
+            </radialGradient>
             <linearGradient id="ebony" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stopColor="#34251b" />
               <stop offset="0.5" stopColor="#241912" />
@@ -3333,15 +3341,10 @@ export default function StaffToFretboard({
                   return (
                     <g key={f}>
                       {isPlaying && (
-                        <circle
-                          cx={x}
-                          cy={y}
-                          r={20}
-                          fill="none"
-                          stroke="var(--danger)"
-                          strokeWidth={3}
-                          opacity={0.85}
-                        />
+                        <g pointerEvents="none">
+                          <circle className="sb-glow" cx={x} cy={y} r={34} fill="url(#sb-glow-grad)" />
+                          <circle cx={x} cy={y} r={21} fill="none" stroke="#fff7d6" strokeWidth={3.5} />
+                        </g>
                       )}
                       <circle
                         cx={x}
