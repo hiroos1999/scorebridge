@@ -656,6 +656,9 @@ export default function StaffToFretboard({
   const [mode, setMode] = useState<"tones" | "rhythm">("tones");
   const [editOpen, setEditOpen] = useState(false);
   const [shapesOn, setShapesOn] = useState(false);
+  // 初期画面をすっきりさせるための折りたたみ(機能自体は変えず、見せ方だけ)
+  const [scoreOpen, setScoreOpen] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
   const [focusOn, setFocusOn] = useState(false);
   const [viewFrets, setViewFrets] = useState<12 | 17>(12);
   const [focusLoState, setFocusLoState] = useState(3);
@@ -2495,6 +2498,16 @@ export default function StaffToFretboard({
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            aria-expanded={scoreOpen}
+            onClick={() => setScoreOpen((v) => !v)}
+            style={{ minHeight: 40, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: "transparent", color: "var(--accent)", fontWeight: 600 }}
+          >
+            {`${timeSig.numerator}/${timeSig.denominator} · m${currentMeasureIndex + 1}/${measures.length} ${scoreOpen ? "▴" : "▾"}`}
+          </button>
+          {scoreOpen && (
+            <>
           <IconButton
             id="accidental-toggle"
             label={useFlats ? "Use sharps" : "Use flats"}
@@ -2515,8 +2528,11 @@ export default function StaffToFretboard({
               </option>
             ))}
           </select>
+            </>
+          )}
         </div>
 
+        {scoreOpen && (
         <div className="toolbar-group" data-cap="Measure">
           <IconButton
             id="measure-prev-btn"
@@ -2549,6 +2565,7 @@ export default function StaffToFretboard({
             }}
           />
         </div>
+        )}
 
         </div>
         {mode === "tones" && (
@@ -3127,6 +3144,26 @@ export default function StaffToFretboard({
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
         <button
           type="button"
+          aria-expanded={boardOpen}
+          onClick={() => setBoardOpen((v) => !v)}
+          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: "transparent", color: "var(--accent)", fontWeight: 700 }}
+        >
+          {boardOpen ? "Fretboard view ▴" : "Fretboard view ▾"}
+        </button>
+        {!boardOpen && (
+          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            {[
+              shapesOn ? "CAGED" : null,
+              focusOn ? `Focus ${focusLo}–${focusHi}` : `${viewFrets} frets`,
+              labelMode === "key" ? "Do Re Mi" : "1 3 5 7",
+            ].filter(Boolean).join(" · ")}
+          </span>
+        )}
+      </div>
+      {boardOpen && (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
+        <button
+          type="button"
           aria-pressed={shapesOn}
           className={shapesOn ? "sb-seg-on" : undefined}
           style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: shapesOn ? "var(--accent)" : "transparent", color: shapesOn ? "var(--on-accent)" : "var(--accent)", fontWeight: 700 }}
@@ -3212,6 +3249,7 @@ export default function StaffToFretboard({
           </>
         )}
       </div>
+      )}
       <div id="fretboard-wrap">
         <svg
           id="fretboard"
