@@ -1233,6 +1233,13 @@ export default function StaffToFretboard({
   // 高さを STAFF_RENDER_HEIGHT_PX に固定したまま、viewBoxの縦横比に応じて
   // 横幅だけを自然に伸ばす（縦のスケール＝ト音記号や五線の間隔は変えない）。
   const staffRenderedWidth = staffH * (STAFF_VB_W / STAFF_VB_H);
+  // 五線の上下に使われていない余白を切り詰める。上はコード名の上まで、下は五線の下(+余白)まで。
+  // 低い音(加線の下)が置かれているときだけ、その音が入る高さまで下を伸ばす。縮尺は変えない。
+  const STAFF_VB_Y0 = 16;
+  const staffLowestY = measures.reduce((m, ms) => ms.notes.reduce((mm, n) => (n.isRest ? mm : n.rowIdxList.reduce((a, r) => Math.max(a, rows[r].y), mm)), m), 0);
+  const staffVbBottom = Math.min(STAFF_VB_H, Math.max(STAFF_TOP + 80 + 40, staffLowestY + 36));
+  const staffVbH = staffVbBottom - STAFF_VB_Y0;
+  const staffRenderedHeight = staffH * (staffVbH / STAFF_VB_H);
 
   // 1小節ずつ表示するページネーションでは、表示中の小節の先頭（LEFT）には
   // 小節線が描画されない（小節線は表示中の小節の右端にのみ描画される）ため、
@@ -1265,7 +1272,7 @@ export default function StaffToFretboard({
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (STAFF_VB_W / rect.width);
-    const y = (e.clientY - rect.top) * (STAFF_VB_H / rect.height);
+    const y = STAFF_VB_Y0 + (e.clientY - rect.top) * (staffVbH / rect.height);
     // 並んだ小節のどれをクリックしても、そのまま入力できる（クリックした小節がアクティブになる）。
     // 小節が1つしか見えない狭い画面では、先頭小節の小節線より右（次の小節のプレビュー）は無視する。
     if (ghostShown && x > lastSlotEndX) {
@@ -2916,10 +2923,10 @@ export default function StaffToFretboard({
       <div id="staff-wrap" ref={staffWrapRef} style={{ overflowX: "auto" }}>
       <svg
         id="staff"
-        viewBox={`0 0 ${STAFF_VB_W} ${STAFF_VB_H}`}
+        viewBox={`0 ${STAFF_VB_Y0} ${STAFF_VB_W} ${staffVbH}`}
         style={{
           width: `${staffRenderedWidth}px`,
-          height: `${staffH}px`,
+          height: `${staffRenderedHeight}px`,
           display: "block",
           cursor: "pointer",
           touchAction: "manipulation",
@@ -3112,18 +3119,18 @@ export default function StaffToFretboard({
 
         <rect
           x={LEFT - 40}
-          y={2}
+          y={STAFF_VB_Y0}
           width={STAFF_VB_W - (LEFT - 40)}
-          height={STAFF_VB_H - 4}
+          height={staffVbH}
           fill="transparent"
           style={{ pointerEvents: "auto", touchAction: "manipulation" }}
         />
 
         <rect
           x={0}
-          y={0}
+          y={STAFF_VB_Y0}
           width={STAFF_VB_W}
-          height={STAFF_VB_H}
+          height={staffVbH}
           fill="var(--danger)"
           opacity={fullFeedback ? 0.2 : 0}
           style={{ transition: "opacity 0.25s", pointerEvents: "none" }}
@@ -3191,8 +3198,9 @@ export default function StaffToFretboard({
       </svg>
       </div>
 
-      <div style={{ margin: "0 0 0.5rem", height: "72px", overflowX: "auto" }}>
-      <div style={{ position: "relative", width: `${staffRenderedWidth}px`, height: "72px" }}>
+      {/* 音符を選んだときだけ、▲/音価/▼ のボタン用の高さを確保する(未選択時は余白を作らない) */}
+      <div style={{ margin: notes.some((n) => n.startGrid === selectedNoteKey) ? "0 0 0.5rem" : 0, height: notes.some((n) => n.startGrid === selectedNoteKey) ? "72px" : 0, overflowX: "auto" }}>
+      <div style={{ position: "relative", width: `${staffRenderedWidth}px`, height: notes.some((n) => n.startGrid === selectedNoteKey) ? "72px" : 0 }}>
         {(() => {
           // notesは既に表示中の小節(measures[currentMeasureIndex].notes)にスコープ
           // されているため、この中で見つかった時点で表示中の小節の音符だと確定する。
