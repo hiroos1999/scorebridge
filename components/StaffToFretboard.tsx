@@ -655,15 +655,15 @@ export default function StaffToFretboard({
   const [restMode, setRestMode] = useState(false);
   const [mode, setMode] = useState<"tones" | "rhythm">("tones");
   const [editOpen, setEditOpen] = useState(false);
-  const [shapesOn, setShapesOn] = useState(false);
+  const [shapesOn, setShapesOn] = useState(true);
   // 初期画面をすっきりさせるための折りたたみ(機能自体は変えず、見せ方だけ)
   const [scoreOpen, setScoreOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
-  const [focusOn, setFocusOn] = useState(false);
+  const [focusOn, setFocusOn] = useState(true);
   const [viewFrets, setViewFrets] = useState<12 | 17>(12);
-  const [focusLoState, setFocusLoState] = useState(3);
+  const [focusLoState, setFocusLoState] = useState(0);
   const [focusW, setFocusW] = useState(5);
-  const [labelMode, setLabelMode] = useState<"key" | "chord">("key");
+  const [labelMode, setLabelMode] = useState<"key" | "chord">("chord");
   const [shapeSel, setShapeSel] = useState<ShapeName | null>(null);
   // ONの間、新規配置する音符・休符を3連符にする（休符モードと同様のトグル）。
   const [tripletMode, setTripletMode] = useState(false);
@@ -1695,9 +1695,11 @@ export default function StaffToFretboard({
   const focusHi = Math.min(FRETS, focusLo + focusW - 1);
   const focusShape = focusOn ? true : undefined;
   const shiftFocus = (d: number) => setFocusLoState(Math.max(0, Math.min(FRETS - focusW + 1, focusLo + d)));
-  const focusX0 = focusShape ? (focusLo === 0 ? 0 : 100 + (focusLo - 1) * 68 - 34) : 0;
-  const focusX1 = focusShape ? 100 + focusHi * 68 + 12 : 940;
-  const wholeX1 = viewFrets === 17 ? 100 + 17 * 68 + 24 : 940;
+  // ナット(0フレットの線)のx座標。開放弦の音は、ナットの1フレット分(fretW)左に、他のフレットと同じ間隔で置く
+  const fbLeft = 150;
+  const focusX0 = focusShape ? (focusLo === 0 ? 0 : fbLeft + (focusLo - 1) * 68 - 34) : 0;
+  const focusX1 = focusShape ? fbLeft + focusHi * 68 + 12 : fbLeft + 12 * 68 + 24;
+  const wholeX1 = fbLeft + (viewFrets === 17 ? 17 : 12) * 68 + 24;
   // 12フレット目より上の位置(1オクターブ上のシェイプ)も描く
   const shapeInstances = shapeList.flatMap((sh) => {
     const up = shapeQuality && displayedHarmony ? shapeNotes(sh.name, displayedHarmony.root, shapeQuality, FRETS, 1) : null;
@@ -1706,7 +1708,6 @@ export default function StaffToFretboard({
   const visibleShapes = shapeInstances.filter((sh) => shapeSel === null || sh.name === shapeSel);
   const shapeNoteKeys = new Set(visibleShapes.flatMap((sh) => sh.notes.map((n) => `${n.s}:${n.f}`)));
 
-  const fbLeft = 100;
   const fbTop = 30;
   const fretW = 68;
   const stringGap = 30;
@@ -3415,7 +3416,7 @@ export default function StaffToFretboard({
                   strokeWidth={0.8 + sIdx * 0.35}
                 />
                 <text
-                  x={focusShape && focusLo > 0 ? focusX0 + 3 : fbLeft - 14}
+                  x={focusShape && focusLo > 0 ? focusX0 + 3 : fbLeft - 82}
                   y={y + 4}
                   textAnchor={focusShape && focusLo > 0 ? "start" : "end"}
                   fontSize={12}
@@ -3429,7 +3430,7 @@ export default function StaffToFretboard({
           })}
 
           {visibleShapes.map((sh) => {
-            const fxs = (f: number) => fbLeft + (f === 0 ? 0 : f * fretW - fretW / 2);
+            const fxs = (f: number) => fbLeft + f * fretW - fretW / 2;
             const pts = sh.notes;
             const circles = pts.map((n) => <circle key={`c${n.s}-${n.f}`} cx={fxs(n.f)} cy={fbTop + n.s * stringGap} r={23} fill="#fff" />);
             const links = pts.flatMap((a) => {
@@ -3459,7 +3460,7 @@ export default function StaffToFretboard({
                   const isHarmonyTone = !isMelody && harmonyPitchClasses.has(pc);
                   if (!isMelody && !isHarmonyTone) return null;
                   if (focusShape && (f < focusLo || f > focusHi)) return null;
-                  const x = fbLeft + (f === 0 ? 0 : f * fretW - fretW / 2);
+                  const x = fbLeft + f * fretW - fretW / 2;
                   const useChordDeg = labelMode === "chord" && !!displayedHarmony;
                   const deg = degreeFor(pc, useChordDeg && displayedHarmony ? displayedHarmony.root : root);
                   const [fill] = colorFor((useChordDeg ? CHORD_DEGREE_ROLE : DEGREE_ROLE)[deg]);
