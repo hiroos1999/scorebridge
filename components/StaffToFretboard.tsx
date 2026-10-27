@@ -708,6 +708,8 @@ export default function StaffToFretboard({
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
   }, []);
+  // 狭い画面では五線譜の表示高さを抑え、指板と同時に見えるようにする
+  const staffH = narrowFretboard ? 200 : STAFF_RENDER_HEIGHT_PX;
   // 五線譜の表示領域の幅。画面が広いときは、表示中の小節の右側に後続の小節も並べて表示する。
   const staffWrapRef = useRef<HTMLDivElement>(null);
   // 入力・再生中の小節が変わったら、その小節が見える位置まで横スクロールする。
@@ -715,12 +717,12 @@ export default function StaffToFretboard({
   useEffect(() => {
     const el = staffWrapRef.current;
     if (!el) return;
-    const scale = STAFF_RENDER_HEIGHT_PX / STAFF_VB_H;
+    const scale = staffH / STAFF_VB_H;
     const slotLeftPx = (LEFT_FIXED + currentMeasureIndex * (NOTE_AREA_WIDTH + PREVIEW_GAP_PX)) * scale;
     const target = currentMeasureIndex === 0 ? 0 : Math.max(0, slotLeftPx - 70 * scale);
     const visible = el.scrollLeft <= slotLeftPx - 20 && slotLeftPx + NOTE_AREA_WIDTH * scale <= el.scrollLeft + el.clientWidth;
     if (!visible) el.scrollTo({ left: target, behavior: "smooth" });
-  }, [currentMeasureIndex, measures.length]);
+  }, [currentMeasureIndex, measures.length, staffH]);
   const [isPlaying, setIsPlaying] = useState(false);
   // ローカルなstartGridは小節をまたいで一意ではないため、どの小節の音符かも保持する。
   const [playingNoteKey, setPlayingNoteKey] = useState<{ measureIndex: number; startGrid: number } | null>(null);
@@ -1198,7 +1200,7 @@ export default function StaffToFretboard({
     x <= firstBarlineX ? 0 : Math.min(windowSize - 1, Math.floor((x - firstBarlineX) / MEASURE_UNIT_W) + 1);
   // 高さを STAFF_RENDER_HEIGHT_PX に固定したまま、viewBoxの縦横比に応じて
   // 横幅だけを自然に伸ばす（縦のスケール＝ト音記号や五線の間隔は変えない）。
-  const staffRenderedWidth = STAFF_RENDER_HEIGHT_PX * (STAFF_VB_W / STAFF_VB_H);
+  const staffRenderedWidth = staffH * (STAFF_VB_W / STAFF_VB_H);
 
   // 1小節ずつ表示するページネーションでは、表示中の小節の先頭（LEFT）には
   // 小節線が描画されない（小節線は表示中の小節の右端にのみ描画される）ため、
@@ -2341,6 +2343,31 @@ export default function StaffToFretboard({
         @media (prefers-reduced-motion: reduce) { .sb-glow { animation: none; } }
         .sb-summary { display:flex; flex-basis:100%; align-items:center; gap:14px; flex-wrap:wrap; font-size:13px; color: var(--text-secondary); padding:0 2px; }
         .sb-summary button { margin-left:auto; background: transparent; border-color: rgba(217,182,90,0.55); color: var(--accent); border-radius:999px; padding:0 14px; font-weight:600; }
+        .sb-mobile-only { display: none; }
+        @media (max-width: 640px) {
+          .sb-header .sb-sub { display: none; }
+          .sb-header { margin-bottom: 8px; }
+          .sb-row { min-width: 0; }
+          .sb-song { flex: 1 1 100%; padding: 6px 8px; }
+          .sb-song[data-cap]::before { display: none; }
+          .sb-song select { flex: 1 1 0; min-width: 0; }
+          .sb-playgroup { display: none !important; }
+          .toolbar-group[data-cap]::before { display: none; }
+          .toolbar-group { padding: 6px 8px; }
+          .sb-summary { gap: 8px; }
+          .sb-summary button { margin-left: 0; }
+          .sb-paper { margin-bottom: 8px; padding: 8px 10px 4px; }
+          .sb-board-tones {
+            position: sticky; bottom: 0; z-index: 20;
+            margin: 0 -0.75rem;
+            padding: 8px 10px calc(6px + env(safe-area-inset-bottom));
+            border-radius: 14px 14px 0 0;
+          }
+          .sb-hide-phone { display: none !important; }
+          .sb-seg button { padding: 0 10px; }
+          .sb-mobile-only .icon-btn-primary, .sb-mobile-only .icon-btn-primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 3px rgba(217,182,90,0.16); }
+          .sb-mobile-only { display: inline-flex; align-items: center; }
+        }
         .sb-edit { align-items:flex-start; }
         .sb-song { flex:1 1 300px; min-width:0; }
         .sb-song select { flex:1 1 150px; }
@@ -2466,7 +2493,7 @@ export default function StaffToFretboard({
         </div>
 
         {mode === "tones" && (
-        <div className="toolbar-group" style={{ marginLeft: "auto", background: "transparent", borderColor: "transparent", paddingRight: 0 }}>
+        <div className="toolbar-group sb-playgroup" style={{ marginLeft: "auto", background: "transparent", borderColor: "transparent", paddingRight: 0 }}>
           <IconButton
             id="play-btn"
             label={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading sounds…"}
@@ -2571,8 +2598,8 @@ export default function StaffToFretboard({
         {mode === "tones" && (
         <div className="sb-summary">
           <span>Pattern: {patternText.trim() || "—"}</span>
-          <span>Oct {patternOctave > 0 ? "+" : ""}{patternOctave}</span>
-          <span>{patternScope === "all" ? "All measures" : patternScope === "measure" ? "This measure" : "From this measure"}</span>
+          <span className="sb-hide-phone">Oct {patternOctave > 0 ? "+" : ""}{patternOctave}</span>
+          <span className="sb-hide-phone">{patternScope === "all" ? "All measures" : patternScope === "measure" ? "This measure" : "From this measure"}</span>
           <button type="button" aria-expanded={editOpen} onClick={() => setEditOpen((v) => !v)}>
             {editOpen ? "Hide chords & pattern ▴" : "Edit chords & pattern ▾"}
           </button>
@@ -2799,7 +2826,7 @@ export default function StaffToFretboard({
         viewBox={`0 0 ${STAFF_VB_W} ${STAFF_VB_H}`}
         style={{
           width: `${staffRenderedWidth}px`,
-          height: `${STAFF_RENDER_HEIGHT_PX}px`,
+          height: `${staffH}px`,
           display: "block",
           cursor: "pointer",
           touchAction: "manipulation",
@@ -3140,7 +3167,7 @@ export default function StaffToFretboard({
 
       </section>
 
-      <section className="sb-board">
+      <section className="sb-board sb-board-tones">
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
         <button
           type="button"
@@ -3150,6 +3177,18 @@ export default function StaffToFretboard({
         >
           {boardOpen ? "Fretboard view ▴" : "Fretboard view ▾"}
         </button>
+        <span className="sb-mobile-only" style={{ marginLeft: "auto", gap: 6 }}>
+          <IconButton
+            id="play-btn-mobile"
+            label={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading sounds…"}
+            text={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading…"}
+            variant="primary"
+            icon={isPlaying ? <Square size={16} /> : <Play size={16} />}
+            active={isPlaying}
+            disabled={!samplesReady && !isPlaying}
+            onClick={handlePlayClick}
+          />
+        </span>
         {!boardOpen && (
           <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
             {[
@@ -3443,6 +3482,7 @@ export default function StaffToFretboard({
 
       <div
         id="degree-legend"
+        className="sb-hide-phone"
         aria-label="Colour key"
         style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}
       >
@@ -3474,12 +3514,12 @@ export default function StaffToFretboard({
         ))}
       </div>
       {narrowFretboard && (
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
+        <div className="sb-hide-phone" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
           Showing frets 0–7. Rotate your device to see up to fret 12.
         </div>
       )}
 
-      <div id="legend">
+      <div id="legend" className="sb-hide-phone">
         Click the staff to place a note; click the same spot again to remove it. A selected note shows accidental and duration controls below.
       </div>
       </section>
