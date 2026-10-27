@@ -2178,6 +2178,9 @@ export default function StaffToFretboard({
   // 表示専用レイヤー。root/kind/inversionからその場でボイシングを計算し、透明な
   // 符頭(全音符型、符幹なし)とコード名を重ねて描画するだけで、notesの描画・
   // クリック判定には一切関与しない。
+  // コード名は、画面上で読みやすい大きさ(デスクトップ15px/スマホ17px程度)になるように、
+  // 五線の縮尺(staffH / STAFF_VB_H)に合わせて viewBox 単位の大きさを決める
+  const chordLabelFontSize = Math.max(13, Math.min(34, (narrowFretboard ? 17 : 15) / (staffH / STAFF_VB_H)));
   function renderHarmoniesLayer(harmoniesToRender: Harmony[], xForOffset: (offsetGrid: number) => number) {
     return (
       <>
@@ -2190,7 +2193,7 @@ export default function StaffToFretboard({
               <text
                 x={x}
                 y={CHORD_LABEL_Y}
-                fontSize={13}
+                fontSize={chordLabelFontSize}
                 fontFamily="-apple-system, 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif"
                 fontWeight="bold"
                 textAnchor="middle"
