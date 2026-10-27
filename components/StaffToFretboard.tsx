@@ -1717,7 +1717,7 @@ export default function StaffToFretboard({
   const shiftFocus = (d: number) => setFocusLoState(Math.max(0, Math.min(FRETS - focusW + 1, focusLo + d)));
   // ナット(0フレットの線)のx座標。開放弦の音は、ナットの1フレット分(fretW)左に、他のフレットと同じ間隔で置く
   const fbLeft = 150;
-  const focusX0 = focusShape ? (focusLo === 0 ? 0 : fbLeft + (focusLo - 1) * 68 - 34) : 0;
+  const focusX0 = focusShape ? (focusLo === 0 ? fbLeft - 80 : fbLeft + (focusLo - 1) * 68 - 34) : 0;
   const focusX1 = focusShape ? fbLeft + focusHi * 68 + 12 : fbLeft + 12 * 68 + 24;
   const wholeX1 = fbLeft + (viewFrets === 17 ? 17 : 12) * 68 + 24;
   // 12フレット目より上の位置(1オクターブ上のシェイプ)も描く
