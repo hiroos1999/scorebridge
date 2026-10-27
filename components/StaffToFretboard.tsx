@@ -3493,14 +3493,14 @@ export default function StaffToFretboard({
                   strokeWidth={0.8 + sIdx * 0.35}
                 />
                 <text
-                  x={focusShape && focusLo > 0 ? focusX0 + 3 : fbLeft - 82}
+                  x={focusShape ? focusX0 + 3 : fbLeft - 82}
                   y={y + 4}
-                  textAnchor={focusShape && focusLo > 0 ? "start" : "end"}
+                  textAnchor={focusShape ? "start" : "end"}
                   fontSize={12}
                   fill="var(--text-secondary)"
-                  style={focusShape && focusLo > 0 ? { stroke: "#241912", strokeWidth: 5, paintOrder: "stroke" } : undefined}
+                  style={focusShape ? { stroke: "#241912", strokeWidth: 5, paintOrder: "stroke" } : undefined}
                 >
-                  {focusShape && focusLo > 0 ? `${st.num}·${st.label}` : tr("String") + " " + st.num + " · " + st.label}
+                  {focusShape ? `${st.num}·${st.label}` : tr("String") + " " + st.num + " · " + st.label}
                 </text>
               </g>
             );
