@@ -2401,6 +2401,12 @@ export default function StaffToFretboard({
           }
           .sb-hide-phone { display: none !important; }
           .sb-seg button { padding: 0 10px; }
+          .sb-mode-seg, .sb-key-group { flex: 1 1 100%; width: 100%; box-sizing: border-box; }
+          .sb-mode-seg { padding: 4px; border-radius: 16px; background: var(--surface-1); }
+          .sb-mode-seg button { flex: 1; height: 40px; border-radius: 12px; white-space: nowrap; }
+          .sb-key-group { flex-wrap: nowrap; padding: 4px; }
+          .sb-key-group select { flex: 0 0 auto; }
+          .sb-key-group > button { flex: 1; min-width: 0; }
           .sb-mobile-only .icon-btn-primary, .sb-mobile-only .icon-btn-primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 3px rgba(217,182,90,0.16); }
           .sb-mobile-only { display: inline-flex; align-items: center; }
         }
@@ -2579,7 +2585,7 @@ export default function StaffToFretboard({
         )}
         </div>
         <div className="sb-row">
-        <div className="sb-seg" role="group" aria-label={tr("Practice mode")}>
+        <div className="sb-seg sb-mode-seg" role="group" aria-label={tr("Practice mode")}>
           <button type="button" aria-pressed={mode === "tones"} className={mode === "tones" ? "sb-seg-on" : ""} onClick={() => setMode("tones")}>
             {tr("Chord tones")}
           </button>
@@ -2587,7 +2593,7 @@ export default function StaffToFretboard({
             {tr("Rhythm")}
           </button>
         </div>
-        <div className="toolbar-group" data-cap={tr("Key & meter")}>
+        <div className="toolbar-group sb-key-group" data-cap={tr("Key & meter")}>
           <select aria-label={tr("Key (movable Do)")} value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
             {names.map((n, i) => (
               <option key={i} value={i}>
