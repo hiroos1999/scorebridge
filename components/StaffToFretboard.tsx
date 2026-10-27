@@ -709,7 +709,19 @@ export default function StaffToFretboard({
     return () => mq.removeEventListener("change", update);
   }, []);
   // 狭い画面では五線譜の表示高さを抑え、指板と同時に見えるようにする
-  const staffH = narrowFretboard ? 200 : STAFF_RENDER_HEIGHT_PX;
+  // 譜面の大きさ(小/中/大)。縦持ちのスマホでは、小さくすると次の小節まで見える。選択は端末に保存する
+  const PHONE_STAFF_HEIGHTS = [140, 170, 200] as const;
+  const [phoneStaffSize, setPhoneStaffSize] = useState(0);
+  useEffect(() => {
+    const load = () => {
+      try {
+        const v = parseInt(localStorage.getItem("sb-staff-size") ?? "", 10);
+        if (v >= 0 && v <= 2) setPhoneStaffSize(v);
+      } catch {}
+    };
+    load();
+  }, []);
+  const staffH = narrowFretboard ? PHONE_STAFF_HEIGHTS[phoneStaffSize] : STAFF_RENDER_HEIGHT_PX;
   // 五線譜の表示領域の幅。画面が広いときは、表示中の小節の右側に後続の小節も並べて表示する。
   const staffWrapRef = useRef<HTMLDivElement>(null);
   // 入力・再生中の小節が変わったら、その小節が見える位置まで横スクロールする。
@@ -2820,6 +2832,23 @@ export default function StaffToFretboard({
       {mode === "tones" && (
       <>
       <section className="sb-paper">
+      <div className="sb-mobile-only" role="group" aria-label="Staff size" style={{ justifyContent: "flex-end", alignItems: "center", gap: 6, margin: "0 0 4px" }}>
+        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Staff size</span>
+        {(["S", "M", "L"] as const).map((label, i) => (
+          <button
+            key={label}
+            type="button"
+            aria-pressed={phoneStaffSize === i}
+            style={{ height: 32, minWidth: 40, borderRadius: 999, border: "1px solid var(--border-strong)", background: phoneStaffSize === i ? "var(--accent)" : "transparent", color: phoneStaffSize === i ? "var(--on-accent)" : "var(--text-primary)", fontWeight: 700, fontSize: 14 }}
+            onClick={() => {
+              setPhoneStaffSize(i);
+              try { localStorage.setItem("sb-staff-size", String(i)); } catch {}
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div id="staff-wrap" ref={staffWrapRef} style={{ overflowX: "auto" }}>
       <svg
         id="staff"
