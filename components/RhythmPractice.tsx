@@ -77,7 +77,18 @@ const SHARP_LETTER = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
 const SHARP_ACC = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
 const FLAT_LETTER = [0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6];
 const FLAT_ACC = [0, -1, 0, -1, 0, 0, -1, 0, -1, 0, -1, 0];
-const DEGREE_BY_INTERVAL: Record<number, string> = { 0: "1", 3: "♭3", 4: "3", 6: "♭5", 7: "5", 9: "6", 10: "♭7", 11: "7" };
+const DEGREE_BY_INTERVAL: Record<number, string> = { 0: "1", 1: "♭9", 2: "9", 3: "♭3", 4: "3", 5: "11", 6: "♭5", 7: "5", 8: "♭13", 9: "6", 10: "♭7", 11: "7" };
+
+// コードの種類に合うスケール(ルートからの半音)
+function scaleFor(iv: number[]): number[] {
+  const has = (n: number) => iv.includes(n);
+  if (has(3) && has(6) && has(9)) return [0, 2, 3, 5, 6, 8, 9, 11]; // dim: ホールトーン・ハーフ
+  if (has(3) && has(6)) return [0, 1, 3, 5, 6, 8, 10]; // m7♭5: ロクリアン
+  if (has(3) && has(11)) return [0, 2, 3, 5, 7, 9, 11]; // mMaj7: メロディックマイナー
+  if (has(3)) return [0, 2, 3, 5, 7, 9, 10]; // m7/m6: ドリアン
+  if (has(4) && has(10)) return [0, 2, 4, 5, 7, 9, 10]; // 7: ミクソリディアン
+  return [0, 2, 4, 5, 7, 9, 11]; // maj7/6: アイオニアン
+}
 
 type Pos = { s: number; f: number };
 type PlanEvent = { beat: number; dur: number; pos: Pos; pc: number; midi: number; written: number; degree: string };
@@ -102,6 +113,22 @@ function pickPos(pc: number, prev: Pos, lo: number, hi: number): Pos {
     }
   }
   return best ?? prev;
+}
+
+// 指定の音(MIDI)を、表示範囲内のどの弦・フレットで弾くか(直前の位置に近いものを選ぶ)
+function posForMidi(midi: number, prev: Pos, lo: number, hi: number): Pos {
+  let best: Pos | null = null;
+  let bestCost = Infinity;
+  for (let st = 0; st < TARGET_STRINGS; st++) {
+    const f = midi - OPEN_MIDI[st];
+    if (f < lo || f > hi) continue;
+    const cost = Math.abs(st - prev.s) * 2 + Math.abs(f - prev.f);
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = { s: st, f };
+    }
+  }
+  return best ?? pickPos(mod12(midi), prev, lo, hi);
 }
 
 function freq(midi: number) {
@@ -137,7 +164,8 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   // --- 出題(plan): 小節ごとにリズムと音を決める。stateではなくrefに持つ(再生中に増える) ---
   const planRef = useRef<PlanBar[]>([]);
   const prevPosRef = useRef<Pos>({ s: 2, f: 5 });
-  const degreeCursorRef = useRef(1);
+  const prevMidiRef = useRef(OPEN_MIDI[2] + 5);
+  const lastDirRef = useRef(1);
 
   // 曲のコード進行(各小節の最初のコード)。無ければChord選択の値。
   const chordsPerBar = useMemo(() => {
@@ -163,14 +191,51 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
       const intervals = CHORD_TYPES[chord.kind] ?? CHORD_TYPES.maj7;
       const candidates = PATTERNS[k].map((p) => p.filter((b) => b < bb - EPS)).filter((p) => p.length > 0);
       const beats = candidates[Math.floor(Math.random() * candidates.length)] ?? [0];
-      const order = [1, 2, 3, 2, 1, 0];
+      // メロディはランダムに作る: 強拍はコードトーン、裏拍や3連符はコードに合うスケールの音も使い、
+      // 直前の音から近い音へ動きやすくする(行ったり来たり・跳躍も混ざる)
+      const scale = scaleFor(intervals);
+      const midis: number[] = [];
+      for (let st = 0; st < TARGET_STRINGS; st++) {
+        for (let f = lo; f <= hi; f++) {
+          const m = OPEN_MIDI[st] + f;
+          if (m >= MIDI_LO && m <= MIDI_HI && !midis.includes(m)) midis.push(m);
+        }
+      }
       const events: PlanEvent[] = beats.map((beat, idx) => {
-        const iv = intervals[order[degreeCursorRef.current % order.length] % intervals.length];
-        degreeCursorRef.current += 1;
-        const pc = mod12(chord.root + iv);
-        const pos = pickPos(pc, prevPosRef.current, lo, hi);
+        const onBeat = Math.abs(beat - Math.round(beat)) < EPS;
+        const strongest = onBeat && Math.round(beat) % 2 === 0;
+        const pChordOnly = strongest || idx === 0 ? 1 : onBeat ? 0.7 : 0.25;
+        const chordOnly = Math.random() < pChordOnly;
+        const prevMidi = prevMidiRef.current;
+        const pool = midis.filter((m) => {
+          const iv = mod12(m - chord.root);
+          return chordOnly ? intervals.includes(iv) : scale.includes(iv) || intervals.includes(iv);
+        });
+        let midi: number;
+        if (pool.length === 0) {
+          const pos0 = pickPos(mod12(chord.root + intervals[Math.floor(Math.random() * intervals.length)]), prevPosRef.current, lo, hi);
+          midi = OPEN_MIDI[pos0.s] + pos0.f;
+        } else {
+          const weights = pool.map((m) => {
+            const d = Math.abs(m - prevMidi);
+            let w = d === 0 ? 0.25 : d <= 2 ? 3 : d <= 4 ? 2 : d <= 7 ? 0.8 : 0.15;
+            if (d !== 0 && Math.sign(m - prevMidi) === lastDirRef.current) w *= 1.4;
+            return w;
+          });
+          let r = Math.random() * weights.reduce((x, y) => x + y, 0);
+          let pick = 0;
+          for (; pick < weights.length - 1; pick++) {
+            r -= weights[pick];
+            if (r <= 0) break;
+          }
+          midi = pool[pick];
+        }
+        lastDirRef.current = Math.sign(midi - prevMidi) || lastDirRef.current;
+        prevMidiRef.current = midi;
+        const iv = mod12(midi - chord.root);
+        const pc = mod12(midi);
+        const pos = posForMidi(midi, prevPosRef.current, lo, hi);
         prevPosRef.current = pos;
-        const midi = OPEN_MIDI[pos.s] + pos.f;
         const written = midi + 12; // 記譜はギターの実音の1オクターブ上
         const next = idx + 1 < beats.length ? beats[idx + 1] : bb;
         return { beat, dur: next - beat, pos, pc, midi, written, degree: DEGREE_BY_INTERVAL[iv] ?? "" };
@@ -242,7 +307,8 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
     beatDurRef.current = beatDur;
     planRef.current = [];
     prevPosRef.current = { s: 2, f: 5 };
-    degreeCursorRef.current = 1;
+    prevMidiRef.current = OPEN_MIDI[2] + 5;
+    lastDirRef.current = 1;
     resultsRef.current = {};
     guidedRef.current = new Set();
     setResults({});
