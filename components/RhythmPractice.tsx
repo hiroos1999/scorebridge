@@ -639,7 +639,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
               {v === "on" ? `${tr("On time")} (±${ON_TIME_MS} ms)` : verdictText[v]}
             </span>
           ))}
-          <span style={{ marginLeft: "auto", fontWeight: 700 }}>
+          <span style={{ flex: "1 1 100%", minHeight: 20, fontWeight: 700, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {inCountIn
               ? `${tr("Count-in")}… ${beatInBar + 1}`
               : stats.total === 0
@@ -650,11 +650,11 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
       </section>
 
       <section className="sb-board">
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 6, padding: "0 4px 4px", fontSize: 13 }}>
-          <span style={{ color: "var(--accent)", fontWeight: 700 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "nowrap", gap: 8, padding: "0 4px 4px", fontSize: 13, minHeight: 22 }}>
+          <span style={{ color: "var(--accent)", fontWeight: 700, minWidth: 0, flex: "1 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {running && target ? `${tr("Next")}: ${target.ev.degree} (${names[target.ev.pc]}) — ${tr("tap any glowing dot on the beat")}` : tr("Chord tones of the current chord")}
           </span>
-          <span style={{ color: "var(--text-secondary)" }}>
+          <span style={{ color: "var(--text-secondary)", flex: "0 0 auto", whiteSpace: "nowrap" }}>
             {lastTap ? `${tr("Last tap")}: ${verdictText[lastTap.verdict]}` : tr("Pitch and timing are both scored")}
           </span>
         </div>
