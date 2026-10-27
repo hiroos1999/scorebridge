@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, Square } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import type { Measure, TimeSignature } from "@/components/StaffToFretboard";
+import { Switch, Stepper } from "@/components/IosControls";
 
 type RhythmKind = "8th" | "triplet" | "16th" | "synco";
 type Verdict = "on" | "early" | "late" | "wrong" | "miss";
@@ -20,6 +21,7 @@ type Props = {
   chordType: string;
   useFlats: boolean;
   timeSig: TimeSignature;
+  tr?: (s: string) => string;
 };
 
 const KIND_LABEL: Record<RhythmKind, string> = {
@@ -101,7 +103,8 @@ function freq(midi: number) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-export default function RhythmPractice({ measures, chordRoot, chordType, useFlats, timeSig }: Props) {
+export default function RhythmPractice({ measures, chordRoot, chordType, useFlats, timeSig, tr: trProp }: Props) {
+  const tr = trProp ?? ((x: string) => x);
   const [kind, setKind] = useState<RhythmKind>("8th");
   const [tempo, setTempo] = useState(70);
   const [countIn, setCountIn] = useState(true);
@@ -438,7 +441,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   const timeSigStr = (n: number) => String(n).split("").map((c) => g(TS[Number(c)])).join("");
 
   const verdictColor: Record<Verdict, string> = { on: "#0E7C66", early: "#B4530A", late: "#6A3FB5", wrong: "#C0392B", miss: "#8A8376" };
-  const verdictText: Record<Verdict, string> = { on: "On time", early: "Early", late: "Late", wrong: "Wrong note", miss: "Missed" };
+  const verdictText: Record<Verdict, string> = { on: tr("On time"), early: tr("Early"), late: tr("Late"), wrong: tr("Wrong note"), miss: tr("Missed") };
 
   function renderBar(plan: PlanBar | undefined, barIdx: 0 | 1, barNo: number) {
     if (!plan) return null;
@@ -548,76 +551,27 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
 
   return (
     <>
-      <div className="sb-row" style={{ alignItems: "center", margin: "0 0 8px" }}>
-        <div className="sb-seg" role="group" aria-label="Rhythm type">
-          {(Object.keys(KIND_LABEL) as RhythmKind[]).map((k) => (
-            <button key={k} type="button" aria-pressed={kind === k} className={kind === k ? "sb-seg-on" : ""} onClick={() => setKind(k)}>
-              {KIND_LABEL[k]}
-            </button>
-          ))}
-        </div>
-        <div className="toolbar-group" data-cap="Tempo">
-          <button type="button" aria-label="Slower" disabled={tempo <= 40} onClick={() => setTempo((t) => Math.max(40, t - 5))}>
-            −
-          </button>
-          <span style={{ minWidth: 36, textAlign: "center", fontWeight: 700 }}>{tempo}</span>
-          <button type="button" aria-label="Faster" disabled={tempo >= 200} onClick={() => setTempo((t) => Math.min(200, t + 5))}>
-            +
-          </button>
-        </div>
-        <div className="toolbar-group" data-cap="Length">
-          <button type="button" aria-label="Fewer bars" disabled={rounds <= 4} onClick={() => setRounds((r) => Math.max(4, r - 4))}>
-            −
-          </button>
-          <span style={{ minWidth: 56, textAlign: "center", fontWeight: 700 }}>{rounds} bars</span>
-          <button type="button" aria-label="More bars" disabled={rounds >= 16} onClick={() => setRounds((r) => Math.min(16, r + 4))}>
-            +
-          </button>
-        </div>
-        <div className="toolbar-group" data-cap="Guide sound">
-          <button type="button" aria-pressed={guide} style={{ minWidth: 64, color: guide ? "var(--accent)" : "var(--text-secondary)", fontWeight: 700 }} onClick={() => setGuide((v) => !v)}>
-            {guide ? "On" : "Off"}
-          </button>
-        </div>
-        <div className="toolbar-group" data-cap="Count-in">
-          <button type="button" aria-pressed={countIn} style={{ minWidth: 64, color: countIn ? "var(--accent)" : "var(--text-secondary)", fontWeight: 700 }} onClick={() => setCountIn((v) => !v)}>
-            {countIn ? "1 bar" : "Off"}
-          </button>
-        </div>
-        <div className="toolbar-group" style={{ marginLeft: "auto", background: "transparent", borderColor: "transparent", paddingRight: 0 }}>
-          <button
-            type="button"
-            className="icon-btn icon-btn-text icon-btn-primary"
-            style={{ width: "auto", padding: "0 16px", display: "inline-flex", alignItems: "center", gap: 8 }}
-            onClick={() => (running ? stop() : start())}
-          >
-            {running ? <Square size={16} /> : <Play size={16} />}
-            {running ? "Stop" : "Start"}
-          </button>
-        </div>
-      </div>
-
       {finished && (() => {
         const total = Math.max(1, stats.total);
         const pts = stats.on + (stats.early + stats.late) * 0.6;
         const score = Math.round((pts / total) * 100);
         const grade = score >= 90 ? "S" : score >= 75 ? "A" : score >= 55 ? "B" : "C";
-        const tendency = stats.early + stats.late === 0 ? "" : stats.early > stats.late * 1.5 ? "Tends to rush (early)." : stats.late > stats.early * 1.5 ? "Tends to drag (late)." : "Early and late are balanced.";
+        const tendency = stats.early + stats.late === 0 ? "" : stats.early > stats.late * 1.5 ? tr("Tends to rush (early).") : stats.late > stats.early * 1.5 ? tr("Tends to drag (late).") : tr("Early and late are balanced.");
         return (
           <section className="sb-paper" style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap", margin: "0 0 10px" }}>
             <div style={{ textAlign: "center", minWidth: 120 }}>
               <div style={{ fontSize: 54, fontWeight: 800, lineHeight: 1, color: "#2a2721" }}>{score}</div>
-              <div style={{ fontSize: 13, color: "#6c6455" }}>points · grade {grade}</div>
+              <div style={{ fontSize: 13, color: "#6c6455" }}>{tr("points")} · {tr("grade")} {grade}</div>
             </div>
             <div style={{ flex: "1 1 260px", fontSize: 15, color: "#2a2721", lineHeight: 1.7 }}>
               <div>
-                <b style={{ color: verdictColor.on }}>On time {stats.on}</b> / {stats.total} notes · early {stats.early} · late {stats.late} · wrong {stats.wrong} · missed {stats.miss}
+                <b style={{ color: verdictColor.on }}>{tr("On time")} {stats.on}</b> / {stats.total} {tr("notes")} · {tr("Early")} {stats.early} · {tr("Late")} {stats.late} · {tr("Wrong note")} {stats.wrong} · {tr("Missed")} {stats.miss}
               </div>
               <div>
-                Average timing {stats.avg >= 0 ? "+" : ""}
+                {tr("Average timing")} {stats.avg >= 0 ? "+" : ""}
                 {stats.avg} ms. {tendency}
               </div>
-              <div style={{ fontSize: 12, color: "#6c6455" }}>On time = 100, early/late = 60, wrong or missed = 0 per note.</div>
+              <div style={{ fontSize: 12, color: "#6c6455" }}>{tr("On time = 100, early/late = 60, wrong or missed = 0 per note.")}</div>
             </div>
             <button
               type="button"
@@ -625,14 +579,14 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
               style={{ width: "auto", padding: "0 18px" }}
               onClick={() => start()}
             >
-              Try again
+              {tr("Try again")}
             </button>
           </section>
         );
       })()}
 
       <section className="sb-paper">
-        <svg viewBox={`0 0 ${VB_W} 300`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="リズム譜。現在の小節と次の小節">
+        <svg viewBox={`0 0 ${VB_W} 300`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label={tr("Rhythm staff: current and next bar")}>
           {[0, 1, 2, 3, 4].map((i) => (
             <line key={i} x1={0} x2={VB_W - 20} y1={STAFF_TOP + i * 20} y2={STAFF_TOP + i * 20} stroke="var(--border-strong)" strokeWidth={1} />
           ))}
@@ -649,11 +603,14 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           </text>
           {running && leftPlan && renderBar(leftPlan, 0, curBar + 1)}
           {running && rightPlan && renderBar(rightPlan, 1, curBar + 2)}
-          {!running && (
-            <text x={LEFT_X + 20} y={STAFF_TOP + 46} fontSize={20} fill="var(--text-secondary)">
-              Press Start. You hear the right note on each beat; tap any glowing dot with it.
-            </text>
-          )}
+          {!running && (() => {
+            const parts = tr("Press Start. You hear the right note on each beat; tap any glowing dot with it.").split(/(?<=[。.])\s*/).filter(Boolean);
+            return parts.map((t, i) => (
+              <text key={i} x={LEFT_X + 20} y={STAFF_TOP + 30 + i * 28} fontSize={20} fill="var(--text-secondary)">
+                {t}
+              </text>
+            ));
+          })()}
           {playheadBeat !== null && <rect x={xOf(0, playheadBeat) - 2} y={STAFF_TOP - 36} width={4} height={160} rx={2} fill="var(--accent)" />}
           <g stroke="var(--border-strong)" strokeWidth={1.4}>
             <line x1={LEFT_X} x2={LEFT_X + 2 * BAR_W} y1={282} y2={282} />
@@ -666,26 +623,63 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           {(["on", "early", "late"] as Verdict[]).map((v) => (
             <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <span aria-hidden style={{ width: 11, height: 11, borderRadius: "50%", background: verdictColor[v], display: "inline-block" }} />
-              {v === "on" ? `On time (±${ON_TIME_MS} ms)` : verdictText[v]}
+              {v === "on" ? `${tr("On time")} (±${ON_TIME_MS} ms)` : verdictText[v]}
             </span>
           ))}
           <span style={{ marginLeft: "auto", fontWeight: 700 }}>
             {inCountIn
-              ? `Count-in… ${beatInBar + 1}`
+              ? `${tr("Count-in")}… ${beatInBar + 1}`
               : stats.total === 0
-                ? "Waiting for your first note"
-                : `On time ${stats.on} / ${stats.total} · avg ${stats.avg >= 0 ? "+" : ""}${stats.avg} ms${stats.wrong ? ` · wrong ${stats.wrong}` : ""}${stats.miss ? ` · missed ${stats.miss}` : ""}`}
+                ? tr("Waiting for your first note")
+                : `${tr("On time")} ${stats.on} / ${stats.total} · ${tr("avg")} ${stats.avg >= 0 ? "+" : ""}${stats.avg} ms${stats.wrong ? ` · ${tr("Wrong note")} ${stats.wrong}` : ""}${stats.miss ? ` · ${tr("Missed")} ${stats.miss}` : ""}`}
           </span>
         </div>
       </section>
 
+      <button
+        type="button"
+        className="sb-startbar"
+        onClick={() => (running ? stop() : start())}
+      >
+        {running ? <Square size={18} /> : <Play size={18} />}
+        {running ? tr("Stop") : tr("Start")}
+      </button>
+
+      <div className="sb-rh-controls">
+        <div className="sb-seg" role="group" aria-label={tr("Rhythm type")} style={{ width: "100%" }}>
+          {(Object.keys(KIND_LABEL) as RhythmKind[]).map((k) => (
+            <button key={k} type="button" aria-pressed={kind === k} className={kind === k ? "sb-seg-on" : ""} style={{ flex: 1 }} onClick={() => setKind(k)}>
+              {tr(KIND_LABEL[k])}
+            </button>
+          ))}
+        </div>
+        <div className="sb-group" style={{ marginTop: 12 }}>
+          <div className="sb-item">
+            <span>{tr("Tempo")}</span>
+            <Stepper minus value={`${tempo}`} downLabel={tr("Slower")} upLabel={tr("Faster")} downDisabled={tempo <= 40} upDisabled={tempo >= 200} onDown={() => setTempo((t) => Math.max(40, t - 5))} onUp={() => setTempo((t) => Math.min(200, t + 5))} />
+          </div>
+          <div className="sb-item">
+            <span>{tr("Length")}</span>
+            <Stepper minus value={`${rounds} ${tr("bars")}`} downLabel={tr("Fewer bars")} upLabel={tr("More bars")} downDisabled={rounds <= 4} upDisabled={rounds >= 16} onDown={() => setRounds((r) => Math.max(4, r - 4))} onUp={() => setRounds((r) => Math.min(16, r + 4))} />
+          </div>
+          <div className="sb-item">
+            <span>{tr("Guide sound")}</span>
+            <Switch on={guide} label={tr("Guide sound")} onClick={() => setGuide((v) => !v)} />
+          </div>
+          <div className="sb-item">
+            <span>{tr("Count-in (1 bar)")}</span>
+            <Switch on={countIn} label={tr("Count-in (1 bar)")} onClick={() => setCountIn((v) => !v)} />
+          </div>
+        </div>
+      </div>
+
       <section className="sb-board">
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 6, padding: "0 4px 4px", fontSize: 13 }}>
           <span style={{ color: "var(--accent)", fontWeight: 700 }}>
-            {running && target ? `Next: ${target.ev.degree} (${names[target.ev.pc]}) — tap any glowing dot on the beat` : "Chord tones of the current chord"}
+            {running && target ? `${tr("Next")}: ${target.ev.degree} (${names[target.ev.pc]}) — ${tr("tap any glowing dot on the beat")}` : tr("Chord tones of the current chord")}
           </span>
           <span style={{ color: "var(--text-secondary)" }}>
-            {lastTap ? `Last tap: ${verdictText[lastTap.verdict]}` : "Pitch and timing are both scored"}
+            {lastTap ? `${tr("Last tap")}: ${verdictText[lastTap.verdict]}` : tr("Pitch and timing are both scored")}
           </span>
         </div>
         <div id="fretboard-wrap">
@@ -694,7 +688,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             style={{ width: "100%", height: "auto", display: "block", minWidth: 660, touchAction: "none", cursor: running ? "pointer" : "default" }}
             onPointerDown={onFretboardPointerDown}
             role="img"
-            aria-label="ギター指板。光っている点が次に弾く音"
+            aria-label={tr("Guitar fretboard: glowing dots are the next note")}
           >
             <defs>
               <linearGradient id="ebony-r" x1="0" y1="0" x2="0" y2="1">
@@ -723,7 +717,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
               <g key={s}>
                 <line x1={FB.left} x2={FB.left + FRETS * FB.fretW} y1={FB.top + s * FB.gap} y2={FB.top + s * FB.gap} stroke="#cfc8b8" strokeOpacity={0.75} strokeWidth={0.8 + s * 0.35} />
                 <text x={FB.left - 40} y={FB.top + s * FB.gap + 4} textAnchor="end" fontSize={12} fill="var(--text-secondary)">
-                  {`String ${s + 1} · ${["E", "B", "G", "D", "A", "E"][s]}`}
+                  {`${tr("String")} ${s + 1} · ${["E", "B", "G", "D", "A", "E"][s]}`}
                 </text>
               </g>
             ))}
@@ -783,12 +777,12 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             )}
           </svg>
         </div>
-        <div id="degree-legend" aria-label="Colour key" style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}>
+        <div id="degree-legend" aria-label={tr("Colour key")} style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}>
           {[
-            { label: "R · root", role: "danger" },
-            { label: "3 · 3rd", role: "warning" },
-            { label: "5, 7 · 5th, 7th", role: "success" },
-            { label: "6 · 6th", role: "pro" },
+            { label: tr("R · root"), role: "danger" },
+            { label: tr("3 · 3rd"), role: "warning" },
+            { label: tr("5, 7 · 5th, 7th"), role: "success" },
+            { label: tr("6 · 6th"), role: "pro" },
           ].map((it) => (
             <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               <span aria-hidden style={{ width: 12, height: 12, borderRadius: "50%", display: "inline-block", background: `var(--${it.role})` }} />
@@ -796,7 +790,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             </span>
           ))}
         </div>
-        <div id="legend">Notes come from the chord tones of the current bar. Tap the exact pitch: the same note at another octave does not count.</div>
+        <div id="legend">{tr("Notes come from the chord tones of the current bar. Tap the exact pitch: the same note at another octave does not count.")}</div>
       </section>
     </>
   );

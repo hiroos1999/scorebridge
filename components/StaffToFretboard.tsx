@@ -1,5 +1,6 @@
 "use client";
 
+import { LANG_STORAGE_KEY, makeTr, type Lang } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Sparkles, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
@@ -12,6 +13,7 @@ import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedS
 import { SHAPE_ORDER, shapeNotes, shapeQualityFor, type ShapeName } from "@/lib/caged";
 import IconButton from "@/components/IconButton";
 import RhythmPractice from "@/components/RhythmPractice";
+import { Switch, Stepper } from "@/components/IosControls";
 import { ChordIcon, FlatIcon, RestIcon, SharpIcon, TripletIcon } from "@/components/MusicIcons";
 
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -657,8 +659,26 @@ export default function StaffToFretboard({
   const [editOpen, setEditOpen] = useState(false);
   const [shapesOn, setShapesOn] = useState(true);
   // 初期画面をすっきりさせるための折りたたみ(機能自体は変えず、見せ方だけ)
+  // 表示言語(日本語/英語)。選択は端末に保存する
+  const [lang, setLang] = useState<Lang>("ja");
+  useEffect(() => {
+    const load = () => {
+      try {
+        const v = localStorage.getItem(LANG_STORAGE_KEY);
+        if (v === "ja" || v === "en") setLang(v);
+      } catch {}
+    };
+    load();
+  }, []);
+  const tr = makeTr(lang);
+  const changeLang = (l: Lang) => {
+    setLang(l);
+    try { localStorage.setItem(LANG_STORAGE_KEY, l); } catch {}
+  };
   const [scoreOpen, setScoreOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
+  const [sheetBottom, setSheetBottom] = useState(0);
+  const boardRef = useRef<HTMLElement>(null);
   const [focusOn, setFocusOn] = useState(true);
   const [viewFrets, setViewFrets] = useState<12 | 17>(12);
   const [focusLoState, setFocusLoState] = useState(0);
@@ -1004,7 +1024,7 @@ export default function StaffToFretboard({
       setMeasures(transposed);
       setRoot(newRoot);
       setUseFlats(flats);
-      setPracticeStatus(`Key ${k + 1} / ${order.length}: Do = ${(flats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP)[newRoot]}`);
+      setPracticeStatus(`${tr("Key")} ${k + 1} / ${order.length}: Do = ${(flats ? NOTE_NAMES_FLAT : NOTE_NAMES_SHARP)[newRoot]}`);
       void playScore(transposed, () => {
         if (practiceRef.current !== base) return;
         if (k + 1 < order.length) runStep(k + 1);
@@ -2262,19 +2282,19 @@ export default function StaffToFretboard({
            操作部は暗い面、五線譜は紙の面、指板は黒檀の面で、それぞれ変数を切り替える。 */
         :root {
           color-scheme: dark;
-          --border: rgba(237, 232, 220, 0.12);
-          --border-strong: rgba(237, 232, 220, 0.26);
-          --text-primary: #ede8dc;
-          --text-secondary: #a39b8c;
-          --surface-0: #100e0d;
-          --surface-1: #1e1b18;
-          --surface-2: #2b2723;
-          --danger: #f0563a; --on-danger:#fff4ee;
-          --warning: #eaa23a; --on-warning:#1a1208;
-          --success: #3fbf8c; --on-success:#06160f;
-          --pro: #8f87f2; --on-pro:#0f0d24;
-          --gray: #8f8878; --on-gray:#100e0d;
-          --accent: #d9b65a; --on-accent:#1a1511;
+          --border: rgba(84, 84, 88, 0.6);
+          --border-strong: rgba(120, 120, 128, 0.5);
+          --text-primary: #ffffff;
+          --text-secondary: rgba(235, 235, 245, 0.6);
+          --surface-0: #000000;
+          --surface-1: #1c1c1e;
+          --surface-2: #2c2c2e;
+          --danger: #ff453a; --on-danger:#ffffff;
+          --warning: #ff9f0a; --on-warning:#1a1000;
+          --success: #30d158; --on-success:#04170a;
+          --pro: #bf5af2; --on-pro:#ffffff;
+          --gray: #8e8e93; --on-gray:#000000;
+          --accent: #e0b84f; --on-accent:#2a2108;
         }
         .sb-paper {
           --border: rgba(42, 39, 33, 0.12);
@@ -2292,16 +2312,16 @@ export default function StaffToFretboard({
           --accent: #b8942f; --on-accent:#2a2721;
           color-scheme: light;
           color: var(--text-primary);
-          background: #f3efe3;
-          border-radius: 14px;
+          background: #f4efe2;
+          border-radius: 22px;
           padding: 10px 14px 8px;
           margin: 0 0 14px;
           box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 22px 44px -24px rgba(0, 0, 0, 0.75);
         }
         .sb-board {
-          border-radius: 14px;
+          border-radius: 22px;
           padding: 14px 14px 10px;
-          background: linear-gradient(180deg, #2a1e16 0%, #1a120d 100%);
+          background: #1c1c1e;
           box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 22px 44px -24px rgba(0, 0, 0, 0.8);
         }
         .sb-header { display: flex; align-items: center; gap: 10px; margin: 2px 0 14px; }
@@ -2329,7 +2349,7 @@ export default function StaffToFretboard({
         select { min-width:0; max-width:100%; }
         select, button {
           height: 36px;
-          border-radius: 8px;
+          border-radius: 10px;
           border: 1px solid var(--border-strong);
           background: var(--surface-1);
           color: var(--text-primary);
@@ -2342,7 +2362,7 @@ export default function StaffToFretboard({
         .toolbar-group {
           display:flex; flex-wrap:wrap; align-items:center; gap:6px; max-width:100%;
           padding:8px 10px 10px; background: var(--surface-1);
-          border:1px solid var(--border); border-radius:12px;
+          border:none; border-radius:16px;
         }
         .toolbar-group[data-cap]::before {
           content: attr(data-cap); flex-basis:100%; font-size:11px; line-height:1;
@@ -2351,9 +2371,9 @@ export default function StaffToFretboard({
         .toolbar-group select, .toolbar-group button { background: var(--surface-0); border-color: var(--border); }
         .toolbar-group select:hover, .toolbar-group button:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-2); }
         .sb-row { display:flex; flex-basis:100%; align-items:stretch; gap:8px; flex-wrap:wrap; }
-        .sb-seg { display:flex; align-items:center; gap:4px; padding:4px; background: var(--surface-1); border:1px solid var(--border); border-radius:12px; }
-        .sb-seg button { border:none; background:transparent; font-weight:500; padding:0 16px; height:36px; color: var(--text-secondary); }
-        .sb-seg button.sb-seg-on, .sb-seg button.sb-seg-on:hover { background: var(--accent); color: var(--on-accent); font-weight:700; }
+        .sb-seg { display:flex; align-items:center; gap:2px; padding:2px; background: rgba(118,118,128,0.24); border:none; border-radius:10px; }
+        .sb-seg button { border:none; background:transparent; font-weight:500; padding:0 16px; height:36px; border-radius:8px; color: var(--text-primary); }
+        .sb-seg button.sb-seg-on, .sb-seg button.sb-seg-on:hover { background: #636366; color: #fff; font-weight:600; box-shadow: 0 3px 8px rgba(0,0,0,0.35); }
         .sb-glow { transform-box: fill-box; transform-origin: center; animation: sb-glow-pulse 0.9s ease-in-out infinite alternate; }
         @keyframes sb-glow-pulse { from { transform: scale(0.85); opacity: 0.75; } to { transform: scale(1.1); opacity: 1; } }
         @media (prefers-reduced-motion: reduce) { .sb-glow { animation: none; } }
@@ -2384,6 +2404,36 @@ export default function StaffToFretboard({
           .sb-mobile-only .icon-btn-primary, .sb-mobile-only .icon-btn-primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 3px rgba(217,182,90,0.16); }
           .sb-mobile-only { display: inline-flex; align-items: center; }
         }
+        .sb-sheet-backdrop { position: fixed; left: 0; right: 0; top: 0; z-index: 40; background: rgba(0,0,0,0.4); }
+        .sb-sheet {
+          position: fixed; left: 0; right: 0; margin: 0 auto; z-index: 41; width: min(560px, 100%); box-sizing: border-box;
+          max-height: 72vh; overflow-y: auto; background: #1c1c1e; border-radius: 28px 28px 0 0;
+          padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow: 0 -20px 50px rgba(0,0,0,0.6);
+        }
+        .sb-sheet-grabber { width: 36px; height: 5px; border-radius: 3px; background: rgba(235,235,245,0.3); margin: 0 auto 6px; }
+        .sb-sheet-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+        .sb-sheet-title { font-size: 17px; font-weight: 600; }
+        .sb-sheet-done { width: 64px; border: none; background: transparent; color: var(--accent); font-size: 17px; font-weight: 600; text-align: right; padding: 0; }
+        .sb-sheet-done:hover { background: transparent; }
+        .sb-startbar { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; height:50px; margin:12px 0; border:none; border-radius:14px; background: var(--accent); color: var(--on-accent); font-size:17px; font-weight:700; }
+        .sb-startbar:hover { background: var(--accent); }
+        .sb-rh-controls { margin: 0 0 14px; }
+        .sb-rh-controls .sb-seg button { padding: 0 4px; font-size: 13px; white-space: nowrap; }
+        .sb-lang { margin-left:auto; } .sb-lang button { height:30px; padding:0 10px; font-size:13px; }
+        .sb-group-title { font-size: 13px; color: var(--text-secondary); padding: 16px 16px 6px; }
+        .sb-group { border-radius: 14px; background: #2c2c2e; overflow: hidden; }
+        .sb-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 4px 16px; border-bottom: 1px solid var(--border); font-size: 17px; }
+        .sb-item:last-child { border-bottom: none; }
+        .sb-item .sb-seg { background: rgba(118,118,128,0.32); }
+        .sb-switch { position: relative; width: 51px; height: 31px; padding: 0; border: none; border-radius: 16px; background: rgba(120,120,128,0.32); transition: background 0.2s; flex-shrink: 0; }
+        .sb-switch:hover { background: rgba(120,120,128,0.32); }
+        .sb-switch[data-on="1"], .sb-switch[data-on="1"]:hover { background: #30d158; }
+        .sb-switch span { position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 14px; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.3); transition: transform 0.2s; }
+        .sb-switch[data-on="1"] span { transform: translateX(20px); }
+        .sb-stepper { display: inline-flex; align-items: center; gap: 10px; }
+        .sb-stepper button { width: 44px; height: 34px; border: none; border-radius: 17px; background: rgba(120,120,128,0.32); color: #fff; font-size: 20px; line-height: 1; padding: 0; }
+        .sb-stepper-val { font-size: 17px; font-weight: 600; min-width: 74px; text-align: center; }
+        .sb-chip { height: 36px; padding: 0 14px; border-radius: 18px; border: 2px solid var(--border-strong); font-size: 15px; font-weight: 600; box-sizing: border-box; background: transparent; color: var(--text-primary); }
         .sb-edit { align-items:flex-start; }
         .sb-song { flex:1 1 300px; min-width:0; }
         .sb-song select { flex:1 1 150px; }
@@ -2438,24 +2488,28 @@ export default function StaffToFretboard({
             <line x1="6.0" y1="22" x2="6.0" y2="14.7" strokeWidth="0.8" /><line x1="10.4" y1="22" x2="10.4" y2="10.3" strokeWidth="0.95" /><line x1="14.8" y1="22" x2="14.8" y2="8.4" strokeWidth="1.1" /><line x1="19.2" y1="22" x2="19.2" y2="8.4" strokeWidth="1.3" /><line x1="23.6" y1="22" x2="23.6" y2="10.3" strokeWidth="1.5" /><line x1="28.0" y1="22" x2="28.0" y2="14.7" strokeWidth="1.7" />
           </g>
         </svg>
-        <span className="sb-name">ScoreBridge</span>
-        <span className="sb-sub">From staff to fretboard</span>
+        <span className="sb-name">{tr("ScoreBridge")}</span>
+        <span className="sb-sub">{tr("From staff to fretboard")}</span>
+        <div className="sb-seg sb-lang" role="group" aria-label="Language">
+          <button type="button" aria-pressed={lang === "ja"} className={lang === "ja" ? "sb-seg-on" : ""} onClick={() => changeLang("ja")}>日本語</button>
+          <button type="button" aria-pressed={lang === "en"} className={lang === "en" ? "sb-seg-on" : ""} onClick={() => changeLang("en")}>EN</button>
+        </div>
       </header>
 
       <div id="controls">
         <div className="sb-row">
-        <div className="toolbar-group sb-song" data-cap="Song">
+        <div className="toolbar-group sb-song" data-cap={tr("Song")}>
           <select
             id="template-select"
             defaultValue=""
-            aria-label="Song template"
+            aria-label={tr("Song template")}
             onChange={(e) => {
               if (!e.target.value) return;
               handleLoadTemplate(e.target.value);
               e.target.value = ""; // 読み込み後は「未選択」に戻す(measuresは通常のstateとして編集可能)
             }}
           >
-            <option value="">Song templates…</option>
+            <option value="">{tr("Song templates…")}</option>
             {(Object.keys(TEMPLATE_CATEGORY_LABELS) as TemplateCategory[]).map((cat) => (
               <optgroup key={cat} label={TEMPLATE_CATEGORY_LABELS[cat]}>
                 {TEMPLATES.filter((t) => t.category === cat).map((t) => (
@@ -2469,14 +2523,14 @@ export default function StaffToFretboard({
 
           <select
             id="my-imports-select"
-            aria-label="My imports"
+            aria-label={tr("My imports")}
             value={selectedImportId}
             onChange={(e) => {
               setSelectedImportId(e.target.value);
               if (e.target.value) handleLoadImportedSong(e.target.value);
             }}
           >
-            <option value="">{importedSongs.length === 0 ? "My imports (none yet)" : "My imports…"}</option>
+            <option value="">{importedSongs.length === 0 ? tr("My imports (none yet)") : tr("My imports…")}</option>
             {importedSongs.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -2486,7 +2540,7 @@ export default function StaffToFretboard({
           {selectedImportId && (
             <IconButton
               id="my-imports-delete-btn"
-              label="Delete selected import"
+              label={tr("Delete selected import")}
               icon={<Trash2 size={16} />}
               onClick={() => void handleDeleteImportedSong(selectedImportId)}
             />
@@ -2501,7 +2555,7 @@ export default function StaffToFretboard({
           />
           <IconButton
             id="import-musicxml-btn"
-            label={isImporting ? "Importing…" : "Import MusicXML"}
+            label={isImporting ? tr("Importing…") : tr("Import MusicXML")}
             icon={<Upload size={16} />}
             disabled={isImporting}
             onClick={() => fileInputRef.current?.click()}
@@ -2512,29 +2566,29 @@ export default function StaffToFretboard({
         <div className="toolbar-group sb-playgroup" style={{ marginLeft: "auto", background: "transparent", borderColor: "transparent", paddingRight: 0 }}>
           <IconButton
             id="play-btn"
-            label={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading sounds…"}
-            text={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading…"}
+            label={isPlaying ? tr("Stop") : samplesReady ? tr("Play") : tr("Loading sounds…")}
+            text={isPlaying ? tr("Stop") : samplesReady ? tr("Play") : tr("Loading…")}
             variant="primary"
             icon={isPlaying ? <Square size={16} /> : <Play size={16} />}
             active={isPlaying}
             disabled={!samplesReady && !isPlaying}
             onClick={handlePlayClick}
           />
-          <IconButton id="clear-btn" label="Clear all" icon={<Eraser size={16} />} onClick={handleClear} />
+          <IconButton id="clear-btn" label={tr("Clear all")} icon={<Eraser size={16} />} onClick={handleClear} />
         </div>
         )}
         </div>
         <div className="sb-row">
-        <div className="sb-seg" role="group" aria-label="Practice mode">
+        <div className="sb-seg" role="group" aria-label={tr("Practice mode")}>
           <button type="button" aria-pressed={mode === "tones"} className={mode === "tones" ? "sb-seg-on" : ""} onClick={() => setMode("tones")}>
-            Chord tones
+            {tr("Chord tones")}
           </button>
           <button type="button" aria-pressed={mode === "rhythm"} className={mode === "rhythm" ? "sb-seg-on" : ""} onClick={() => setMode("rhythm")}>
-            Rhythm
+            {tr("Rhythm")}
           </button>
         </div>
-        <div className="toolbar-group" data-cap="Key & meter">
-          <select aria-label="Key (movable Do)" value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
+        <div className="toolbar-group" data-cap={tr("Key & meter")}>
+          <select aria-label={tr("Key (movable Do)")} value={root} onChange={(e) => setRoot(parseInt(e.target.value, 10))}>
             {names.map((n, i) => (
               <option key={i} value={i}>
                 {n}
@@ -2553,12 +2607,12 @@ export default function StaffToFretboard({
             <>
           <IconButton
             id="accidental-toggle"
-            label={useFlats ? "Use sharps" : "Use flats"}
+            label={useFlats ? tr("Use sharps") : tr("Use flats")}
             icon={useFlats ? <SharpIcon /> : <FlatIcon />}
             onClick={() => setUseFlats((prev) => !prev)}
           />
           <select
-            aria-label="Time signature"
+            aria-label={tr("Time signature")}
             value={`${timeSig.numerator}/${timeSig.denominator}`}
             onChange={(e) => {
               const [num, den] = e.target.value.split("/").map(Number);
@@ -2576,10 +2630,10 @@ export default function StaffToFretboard({
         </div>
 
         {scoreOpen && (
-        <div className="toolbar-group" data-cap="Measure">
+        <div className="toolbar-group" data-cap={tr("Measure")}>
           <IconButton
             id="measure-prev-btn"
-            label="Previous measure"
+            label={tr("Previous measure")}
             icon={<ChevronLeft size={18} />}
             disabled={currentMeasureIndex === 0}
             onClick={() => {
@@ -2597,7 +2651,7 @@ export default function StaffToFretboard({
           </span>
           <IconButton
             id="measure-next-btn"
-            label="Next measure"
+            label={tr("Next measure")}
             icon={<ChevronRight size={18} />}
             disabled={currentMeasureIndex === measures.length - 1}
             onClick={() => {
@@ -2615,42 +2669,42 @@ export default function StaffToFretboard({
         <div className="sb-summary">
           <span>Pattern: {patternText.trim() || "—"}</span>
           <span className="sb-hide-phone">Oct {patternOctave > 0 ? "+" : ""}{patternOctave}</span>
-          <span className="sb-hide-phone">{patternScope === "all" ? "All measures" : patternScope === "measure" ? "This measure" : "From this measure"}</span>
+          <span className="sb-hide-phone">{patternScope === "all" ? tr("All measures") : patternScope === "measure" ? tr("This measure") : tr("From this measure")}</span>
           <button type="button" aria-expanded={editOpen} onClick={() => setEditOpen((v) => !v)}>
-            {editOpen ? "Hide chords & pattern ▴" : "Edit chords & pattern ▾"}
+            {editOpen ? tr("Hide chords & pattern ▴") : tr("Edit chords & pattern ▾")}
           </button>
         </div>
         )}
         {mode === "tones" && editOpen && (
           <div className="sb-row sb-edit">
-        <div className="toolbar-group" data-cap="Entry & measures">
+        <div className="toolbar-group" data-cap={tr("Entry & measures")}>
           <IconButton
             id="rest-toggle"
-            label="Rest mode"
+            label={tr("Rest mode")}
             icon={<RestIcon />}
             active={restMode}
             onClick={() => setRestMode((prev) => !prev)}
           />
           <IconButton
             id="triplet-toggle"
-            label="Triplet mode"
+            label={tr("Triplet mode")}
             icon={<TripletIcon />}
             active={tripletMode}
             onClick={() => setTripletMode((prev) => !prev)}
           />
-          <IconButton id="measure-add-btn" label="Add measure at end" icon={<Plus size={16} />} onClick={handleAddMeasure} />
+          <IconButton id="measure-add-btn" label={tr("Add measure at end")} icon={<Plus size={16} />} onClick={handleAddMeasure} />
           <IconButton
             id="measure-delete-btn"
-            label="Delete this measure"
+            label={tr("Delete this measure")}
             icon={<Trash2 size={16} />}
             disabled={measures.length <= 1}
             onClick={handleDeleteMeasure}
           />
         </div>
-        <div className="toolbar-group" data-cap="Chord">
+        <div className="toolbar-group" data-cap={tr("Chord")}>
           <select
             id="chord-root-select"
-            aria-label="Chord root"
+            aria-label={tr("Chord root")}
             value={chordRoot}
             onChange={(e) => setChordRoot(parseInt(e.target.value, 10))}
           >
@@ -2660,7 +2714,7 @@ export default function StaffToFretboard({
               </option>
             ))}
           </select>
-          <select id="chord-type-select" aria-label="Chord quality" value={chordType} onChange={(e) => setChordType(e.target.value)}>
+          <select id="chord-type-select" aria-label={tr("Chord quality")} value={chordType} onChange={(e) => setChordType(e.target.value)}>
             {Object.keys(CHORD_TYPES).map((type) => (
               <option key={type} value={type}>
                 {CHORD_TYPE_LABELS[type]}
@@ -2669,7 +2723,7 @@ export default function StaffToFretboard({
           </select>
           <select
             id="chord-inversion-select"
-            aria-label="Chord inversion"
+            aria-label={tr("Chord inversion")}
             value={chordInversion}
             onChange={(e) => setChordInversion(parseInt(e.target.value, 10))}
           >
@@ -2679,12 +2733,12 @@ export default function StaffToFretboard({
               </option>
             ))}
           </select>
-          <IconButton id="chord-place-btn" label="Place chord" text="Place chord" variant="outline" icon={<ChordIcon />} onClick={handlePlaceChord} />
+          <IconButton id="chord-place-btn" label={tr("Place chord")} text="Place chord" variant="outline" icon={<ChordIcon />} onClick={handlePlaceChord} />
         </div>
 
-        <div className="toolbar-group" data-cap="Pattern (chord tones)">
+        <div className="toolbar-group" data-cap={tr("Pattern (chord tones)")}>
           <select
-            aria-label="Pattern preset"
+            aria-label={tr("Pattern preset")}
             value=""
             onChange={(e) => {
               if (!e.target.value) return;
@@ -2692,7 +2746,7 @@ export default function StaffToFretboard({
               setPatternError(false);
             }}
           >
-            <option value="">Presets…</option>
+            <option value="">{tr("Presets…")}</option>
             {PATTERN_PRESETS.map((p) => (
               <option key={p.label} value={p.text}>
                 {p.label}
@@ -2702,7 +2756,7 @@ export default function StaffToFretboard({
           <input
             id="pattern-input"
             type="text"
-            aria-label="Chord-tone pattern (e.g. 3 1 5+ 7)"
+            aria-label={tr("Chord-tone pattern (e.g. 3 1 5+ 7)")}
             aria-invalid={patternError}
             title="1 3 5 7 9 11 13 を空白区切りで。b9 / #11 のように♭♯、5+ / 5- で直前の音より上/下"
             value={patternText}
@@ -2725,28 +2779,28 @@ export default function StaffToFretboard({
             }}
           />
           <select
-            aria-label="Pattern octave"
+            aria-label={tr("Pattern octave")}
             value={patternOctave}
             onChange={(e) => setPatternOctave(parseInt(e.target.value, 10))}
           >
-            <option value={-1}>Oct −1</option>
-            <option value={0}>Oct 0</option>
-            <option value={1}>Oct +1</option>
+            <option value={-1}>{tr("Oct −1")}</option>
+            <option value={0}>{tr("Oct 0")}</option>
+            <option value={1}>{tr("Oct +1")}</option>
           </select>
           <select
-            aria-label="Pattern scope"
+            aria-label={tr("Pattern scope")}
             value={patternScope}
             onChange={(e) => setPatternScope(e.target.value as "all" | "measure" | "from")}
           >
-            <option value="all">All measures</option>
-            <option value="measure">This measure</option>
-            <option value="from">From this measure</option>
+            <option value="all">{tr("All measures")}</option>
+            <option value="measure">{tr("This measure")}</option>
+            <option value="from">{tr("From this measure")}</option>
           </select>
           <IconButton
             id="pattern-apply-btn"
-            label="Apply pattern to chords (replaces melody)"
+            label={tr("Apply pattern to chords (replaces melody)")}
             icon={<Sparkles size={16} />}
-            text="Apply"
+            text={tr("Apply")}
             variant="outline"
             onClick={handleApplyPattern}
           />
@@ -2755,7 +2809,7 @@ export default function StaffToFretboard({
               <button
                 key={t}
                 type="button"
-                aria-label={`Add ${t}`}
+                aria-label={`${tr("Add")} ${t}`}
                 style={{ height: 28, minWidth: 30, padding: "0 8px", fontSize: 12 }}
                 onClick={() => {
                   setPatternText((prev) =>
@@ -2769,7 +2823,7 @@ export default function StaffToFretboard({
             ))}
             <button
               type="button"
-              aria-label="Remove last"
+              aria-label={tr("Remove last")}
               style={{ height: 28, padding: "0 8px", fontSize: 12 }}
               onClick={() => setPatternText((prev) => prev.trim().split(/\s+/).slice(0, -1).join(" "))}
             >
@@ -2778,21 +2832,21 @@ export default function StaffToFretboard({
           </div>
           {patternError && (
             <span role="alert" style={{ fontSize: 12, color: "#e5645a" }}>
-              Use degrees like 1 3 5 7 9 11 13
+              {tr("Use degrees like 1 3 5 7 9 11 13")}
             </span>
           )}
         </div>
 
-        <div className="toolbar-group" data-cap="Practice">
+        <div className="toolbar-group" data-cap={tr("Practice")}>
           <select
-            aria-label="12-key practice"
+            aria-label={tr("12-key practice")}
             value={practiceMode}
             disabled={isPlaying}
             onChange={(e) => setPracticeMode(e.target.value as "off" | "fourths" | "chromatic")}
           >
-            <option value="off">12 keys: off</option>
-            <option value="fourths">12 keys: up a 4th</option>
-            <option value="chromatic">12 keys: up a semitone</option>
+            <option value="off">{tr("12 keys: off")}</option>
+            <option value="fourths">{tr("12 keys: up a 4th")}</option>
+            <option value="chromatic">{tr("12 keys: up a semitone")}</option>
           </select>
           {practiceStatus && <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{practiceStatus}</span>}
         </div>
@@ -2831,13 +2885,13 @@ export default function StaffToFretboard({
       )}
 
       {mode === "rhythm" && (
-        <RhythmPractice measures={measures} chordRoot={chordRoot} chordType={chordType} useFlats={useFlats} timeSig={timeSig} />
+        <RhythmPractice measures={measures} chordRoot={chordRoot} chordType={chordType} useFlats={useFlats} timeSig={timeSig} tr={tr} />
       )}
       {mode === "tones" && (
       <>
       <section className="sb-paper">
-      <div className="sb-mobile-only" role="group" aria-label="Staff size" style={{ justifyContent: "flex-end", alignItems: "center", gap: 6, margin: "0 0 4px" }}>
-        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Staff size</span>
+      <div className="sb-mobile-only" role="group" aria-label={tr("Staff size")} style={{ justifyContent: "flex-end", alignItems: "center", gap: 6, margin: "0 0 4px" }}>
+        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{tr("Staff size")}</span>
         {(["S", "M", "L"] as const).map((label, i) => (
           <button
             key={label}
@@ -3077,7 +3131,7 @@ export default function StaffToFretboard({
           座標系(LEFT・GRID_UNIT_WIDTH・STAFF_VB_W)を共有しているため、
           x位置は五線譜本体とぴったり揃う。 */}
       <div style={{ fontSize: "11px", color: "var(--text-secondary)", margin: "4px 0 2px" }}>
-        Click to set where the chord goes
+        {tr("Click to set where the chord goes")}
       </div>
       <svg
         id="chord-timeline"
@@ -3200,21 +3254,24 @@ export default function StaffToFretboard({
 
       </section>
 
-      <section className="sb-board sb-board-tones">
+      <section ref={boardRef} className="sb-board sb-board-tones">
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
         <button
           type="button"
           aria-expanded={boardOpen}
-          onClick={() => setBoardOpen((v) => !v)}
-          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: "transparent", color: "var(--accent)", fontWeight: 700 }}
+          onClick={() => {
+            setSheetBottom(narrowFretboard ? Math.round(boardRef.current?.getBoundingClientRect().height ?? 0) : 0);
+            setBoardOpen((v) => !v);
+          }}
+          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(224,184,79,0.55)", background: "transparent", color: "var(--accent)", fontWeight: 700 }}
         >
-          {boardOpen ? "Fretboard view ▴" : "Fretboard view ▾"}
+          {tr("Fretboard view")} {boardOpen ? "▴" : "▾"}
         </button>
         <span className="sb-mobile-only" style={{ marginLeft: "auto", gap: 6 }}>
           <IconButton
             id="play-btn-mobile"
-            label={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading sounds…"}
-            text={isPlaying ? "Stop" : samplesReady ? "Play" : "Loading…"}
+            label={isPlaying ? tr("Stop") : samplesReady ? tr("Play") : tr("Loading sounds…")}
+            text={isPlaying ? tr("Stop") : samplesReady ? tr("Play") : tr("Loading…")}
             variant="primary"
             icon={isPlaying ? <Square size={16} /> : <Play size={16} />}
             active={isPlaying}
@@ -3222,105 +3279,119 @@ export default function StaffToFretboard({
             onClick={handlePlayClick}
           />
         </span>
-        {!boardOpen && (
-          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-            {[
-              shapesOn ? "CAGED" : null,
-              focusOn ? `Focus ${focusLo}–${focusHi}` : `${viewFrets} frets`,
-              labelMode === "key" ? "Do Re Mi" : "1 3 5 7",
-            ].filter(Boolean).join(" · ")}
-          </span>
-        )}
+        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          {[
+            shapesOn ? "CAGED" : null,
+            focusOn ? `${tr("Focus")} ${focusLo}–${focusHi}` : `${viewFrets} ${tr("frets")}`,
+            labelMode === "key" ? tr("Do Re Mi") : "1 3 5 7",
+          ].filter(Boolean).join(" · ")}
+        </span>
       </div>
       {boardOpen && (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
-        <button
-          type="button"
-          aria-pressed={shapesOn}
-          className={shapesOn ? "sb-seg-on" : undefined}
-          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: shapesOn ? "var(--accent)" : "transparent", color: shapesOn ? "var(--on-accent)" : "var(--accent)", fontWeight: 700 }}
-          onClick={() => {
-            setShapesOn((v) => !v);
-            setShapeSel(null);
-          }}
-        >
-          CAGED shapes
-        </button>
-        <button
-          type="button"
-          aria-pressed={focusOn}
-          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(217,182,90,0.55)", background: focusOn ? "var(--accent)" : "transparent", color: focusOn ? "var(--on-accent)" : "var(--accent)", fontWeight: 700 }}
-          onClick={() => setFocusOn((v) => !v)}
-        >
-          {focusOn ? "Show all" : "Focus"}
-        </button>
-        {focusOn && (
-          <div role="group" aria-label="Focus range" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <button type="button" aria-label="Move range down" disabled={focusLo <= 0} style={{ minHeight: 40, minWidth: 44, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)" }} onClick={() => shiftFocus(-1)}>
-              ‹
-            </button>
-            <span style={{ minWidth: 92, textAlign: "center", fontWeight: 700, color: "var(--text-primary)" }}>Frets {focusLo}–{focusHi}</span>
-            <button type="button" aria-label="Move range up" disabled={focusHi >= FRETS} style={{ minHeight: 40, minWidth: 44, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)" }} onClick={() => shiftFocus(1)}>
-              ›
-            </button>
-            <button type="button" aria-label="Fewer frets" disabled={focusW <= 4} style={{ minHeight: 40, minWidth: 40, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)", marginLeft: 6 }} onClick={() => setFocusW((w) => Math.max(4, w - 1))}>
-              −
-            </button>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{focusW} frets</span>
-            <button type="button" aria-label="More frets" disabled={focusW >= 8} style={{ minHeight: 40, minWidth: 40, borderRadius: 999, border: "1px solid var(--border-strong)", background: "transparent", color: "var(--text-primary)" }} onClick={() => setFocusW((w) => Math.min(8, w + 1))}>
-              +
-            </button>
+        <>
+          <div className="sb-sheet-backdrop" style={{ bottom: sheetBottom }} onClick={() => setBoardOpen(false)} />
+          <div className="sb-sheet" role="dialog" aria-modal="true" aria-label={tr("Fretboard view")} style={{ bottom: sheetBottom }}>
+            <div className="sb-sheet-grabber" aria-hidden="true" />
+            <div className="sb-sheet-head">
+              <span style={{ width: 64 }} />
+              <span className="sb-sheet-title">{tr("Fretboard view")}</span>
+              <button type="button" className="sb-sheet-done" onClick={() => setBoardOpen(false)}>{tr("Done")}</button>
+            </div>
+
+            <div className="sb-group-title">{tr("Display")}</div>
+            <div className="sb-group">
+              <div className="sb-item">
+                <span>{tr("CAGED shapes")}</span>
+                <Switch on={shapesOn} label={tr("CAGED shapes")} onClick={() => { setShapesOn((v) => !v); setShapeSel(null); }} />
+              </div>
+              <div className="sb-item">
+                <span>{tr("Zoom frets (Focus)")}</span>
+                <Switch on={focusOn} label={tr("Zoom frets (Focus)")} onClick={() => setFocusOn((v) => !v)} />
+              </div>
+              {focusOn ? (
+                <>
+                  <div className="sb-item">
+                    <span>{tr("Range")}</span>
+                    <Stepper
+                      value={`${tr("Frets")} ${focusLo}–${focusHi}`}
+                      downLabel={tr("Move range down")}
+                      upLabel={tr("Move range up")}
+                      downDisabled={focusLo <= 0}
+                      upDisabled={focusHi >= FRETS}
+                      onDown={() => shiftFocus(-1)}
+                      onUp={() => shiftFocus(1)}
+                    />
+                  </div>
+                  <div className="sb-item">
+                    <span>{tr("Width")}</span>
+                    <Stepper
+                      value={`${focusW} ${tr("frets")}`}
+                      downLabel={tr("Fewer frets")}
+                      upLabel={tr("More frets")}
+                      downDisabled={focusW <= 4}
+                      upDisabled={focusW >= 8}
+                      onDown={() => setFocusW((w) => Math.max(4, w - 1))}
+                      onUp={() => setFocusW((w) => Math.min(8, w + 1))}
+                      minus
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="sb-item">
+                  <span>{tr("Visible frets")}</span>
+                  <div className="sb-seg" role="group" aria-label={tr("Visible frets")}>
+                    {([12, 17] as const).map((n) => (
+                      <button key={n} type="button" aria-pressed={viewFrets === n} className={viewFrets === n ? "sb-seg-on" : ""} onClick={() => setViewFrets(n)}>
+                        {n} {tr("frets")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="sb-group-title">{tr("Note labels")}</div>
+            <div className="sb-seg" role="group" aria-label={tr("Note labels")} style={{ width: "100%" }}>
+              {([["key", "Do Re Mi"], ["chord", "1 3 5 7"]] as const).map(([m, label]) => (
+                <button key={m} type="button" aria-pressed={labelMode === m} className={labelMode === m ? "sb-seg-on" : ""} style={{ flex: 1 }} onClick={() => setLabelMode(m)}>
+                  {tr(label)}
+                </button>
+              ))}
+            </div>
+
+            {shapesOn && (
+              <>
+                <div className="sb-group-title">{tr("Shapes")}</div>
+                {shapeQuality ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <button type="button" aria-pressed={shapeSel === null} className="sb-chip" style={{ background: shapeSel === null ? "var(--accent)" : "transparent", color: shapeSel === null ? "var(--on-accent)" : "var(--text-primary)", borderColor: shapeSel === null ? "var(--accent)" : "var(--border-strong)" }} onClick={() => setShapeSel(null)}>
+                      {tr("All")}
+                    </button>
+                    {shapeList.map((sh) => (
+                      <button
+                        key={sh.name}
+                        type="button"
+                        aria-pressed={shapeSel === sh.name}
+                        className="sb-chip"
+                        style={{ borderColor: SHAPE_COLORS[sh.name], background: shapeSel === sh.name ? SHAPE_COLORS[sh.name] : "transparent", color: shapeSel === sh.name ? "#1a1511" : "var(--text-primary)" }}
+                        onClick={() => {
+                          setShapeSel(shapeSel === sh.name ? null : sh.name);
+                          if (focusOn && shapeSel !== sh.name) setFocusLoState(Math.max(0, Math.min(...sh.notes.map((n) => n.f)) - 1));
+                        }}
+                      >
+                        {sh.name} · {sh.start === 0 ? tr("open") : sh.start}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                    {tr("Shapes are available for maj7, 7, 6, m7, m6, mMaj7, dim and m7♭5 chords. Place or select one of these chords.")}
+                  </div>
+                )}
+              </>
+            )}
           </div>
-        )}
-        {!focusOn && (
-          <div role="group" aria-label="Visible frets" style={{ display: "inline-flex", border: "1px solid var(--border-strong)", borderRadius: 999, overflow: "hidden" }}>
-            {([12, 17] as const).map((n) => (
-              <button key={n} type="button" aria-pressed={viewFrets === n} style={{ minHeight: 40, padding: "0 12px", border: "none", borderRadius: 0, background: viewFrets === n ? "var(--surface-2)" : "transparent", color: "var(--text-primary)", fontWeight: viewFrets === n ? 700 : 500 }} onClick={() => setViewFrets(n)}>
-                {n} frets
-              </button>
-            ))}
-          </div>
-        )}
-        <div role="group" aria-label="Note labels" style={{ display: "inline-flex", border: "1px solid var(--border-strong)", borderRadius: 999, overflow: "hidden", marginLeft: "auto" }}>
-          {([["key", "Do Re Mi"], ["chord", "1 3 5 7"]] as const).map(([m, label]) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={labelMode === m}
-              style={{ minHeight: 40, padding: "0 14px", border: "none", borderRadius: 0, background: labelMode === m ? "var(--accent)" : "transparent", color: labelMode === m ? "var(--on-accent)" : "var(--text-primary)", fontWeight: labelMode === m ? 700 : 500 }}
-              onClick={() => setLabelMode(m)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {shapesOn && !shapeQuality && (
-          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-            Shapes are available for maj7, 7, 6, m7, m6, mMaj7, dim and m7♭5 chords. Place or select one of these chords.
-          </span>
-        )}
-        {shapesOn && shapeQuality && (
-          <>
-            <button type="button" aria-pressed={shapeSel === null} style={{ minHeight: 40, padding: "0 12px", borderRadius: 999, border: "1px solid var(--border-strong)", background: shapeSel === null ? "var(--surface-2)" : "transparent", color: "var(--text-primary)" }} onClick={() => setShapeSel(null)}>
-              All
-            </button>
-            {shapeList.map((sh) => (
-              <button
-                key={sh.name}
-                type="button"
-                aria-pressed={shapeSel === sh.name}
-                style={{ minHeight: 40, minWidth: 48, borderRadius: 999, border: `2px solid ${SHAPE_COLORS[sh.name]}`, background: shapeSel === sh.name ? SHAPE_COLORS[sh.name] : "transparent", color: shapeSel === sh.name ? "#1a1511" : "var(--text-primary)", fontWeight: 700 }}
-                onClick={() => {
-                  setShapeSel(shapeSel === sh.name ? null : sh.name);
-                  if (focusOn && shapeSel !== sh.name) setFocusLoState(Math.max(0, Math.min(...sh.notes.map((n) => n.f)) - 1));
-                }}
-              >
-                {sh.name} · {sh.start === 0 ? "open" : `fret ${sh.start}`}
-              </button>
-            ))}
-          </>
-        )}
-      </div>
+        </>
       )}
       <div id="fretboard-wrap">
         <svg
@@ -3423,7 +3494,7 @@ export default function StaffToFretboard({
                   fill="var(--text-secondary)"
                   style={focusShape && focusLo > 0 ? { stroke: "#241912", strokeWidth: 5, paintOrder: "stroke" } : undefined}
                 >
-                  {focusShape && focusLo > 0 ? `${st.num}·${st.label}` : "String " + st.num + " · " + st.label}
+                  {focusShape && focusLo > 0 ? `${st.num}·${st.label}` : tr("String") + " " + st.num + " · " + st.label}
                 </text>
               </g>
             );
@@ -3516,7 +3587,7 @@ export default function StaffToFretboard({
       <div
         id="degree-legend"
         className="sb-hide-phone"
-        aria-label="Colour key"
+        aria-label={tr("Colour key")}
         style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}
       >
         {(labelMode === "chord"
@@ -3526,15 +3597,15 @@ export default function StaffToFretboard({
               { label: "11 · 4th", role: "accent" },
               { label: "♭5, 5, ♭7, 7", role: "success" },
               { label: "9, 6/13", role: "pro" },
-              { label: "Other", role: "gray" },
+              { label: tr("Other"), role: "gray" },
             ]
           : [
-              { label: "Do · root", role: "danger" },
-              { label: "Mi · 3rd", role: "warning" },
-              { label: "Fa · 4th", role: "accent" },
-              { label: "Sol, Ti · 5th, 7th", role: "success" },
-              { label: "Re, La · 2nd, 6th", role: "pro" },
-              { label: "Chromatic", role: "gray" },
+              { label: tr("Do · root"), role: "danger" },
+              { label: tr("Mi · 3rd"), role: "warning" },
+              { label: tr("Fa · 4th"), role: "accent" },
+              { label: tr("Sol, Ti · 5th, 7th"), role: "success" },
+              { label: tr("Re, La · 2nd, 6th"), role: "pro" },
+              { label: tr("Chromatic"), role: "gray" },
             ]
         ).map((it) => (
           <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -3548,7 +3619,7 @@ export default function StaffToFretboard({
       </div>
       {narrowFretboard && (
         <div className="sb-hide-phone" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
-          Showing frets 0–7. Rotate your device to see up to fret 12.
+          {tr("Showing frets 0–7. Rotate your device to see up to fret 12.")}
         </div>
       )}
 
