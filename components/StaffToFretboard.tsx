@@ -2431,6 +2431,13 @@ export default function StaffToFretboard({
         .sb-startbar { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; height:50px; margin:12px 0; border:none; border-radius:14px; background: var(--accent); color: var(--on-accent); font-size:17px; font-weight:700; }
         .sb-startbar:hover { background: var(--accent); }
         .sb-rh-controls { margin: 0 0 14px; }
+        @media (max-width: 640px) {
+          .sb-rh-sticky { position: sticky; top: 0; z-index: 30; background: var(--surface-0); padding-top: 4px; }
+          .sb-rh-sticky .sb-startbar { height: 44px; margin: 0 0 6px; }
+          .sb-rh-sticky .sb-paper { margin-bottom: 6px; }
+          .sb-rh-sticky .sb-board { padding-bottom: 8px; }
+          .sb-rh-sticky #legend { display: none; }
+        }
         .sb-rh-controls .sb-seg button { padding: 0 4px; font-size: 13px; white-space: nowrap; }
         .sb-lang { margin-left:auto; } .sb-lang button { height:30px; padding:0 10px; font-size:13px; }
         .sb-group-title { font-size: 13px; color: var(--text-secondary); padding: 16px 16px 6px; }

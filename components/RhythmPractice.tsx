@@ -116,6 +116,9 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   guideRef.current = guide;
   const guidedRef = useRef<Set<string>>(new Set());
   const [finished, setFinished] = useState(false);
+  useEffect(() => {
+    if (finished) document.getElementById("rh-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [finished]);
   const roundsRef = useRef(8);
   roundsRef.current = rounds;
   const [results, setResults] = useState<Record<string, { verdict: Verdict; ms: number }>>({});
@@ -558,7 +561,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
         const grade = score >= 90 ? "S" : score >= 75 ? "A" : score >= 55 ? "B" : "C";
         const tendency = stats.early + stats.late === 0 ? "" : stats.early > stats.late * 1.5 ? tr("Tends to rush (early).") : stats.late > stats.early * 1.5 ? tr("Tends to drag (late).") : tr("Early and late are balanced.");
         return (
-          <section className="sb-paper" style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap", margin: "0 0 10px" }}>
+          <section id="rh-results" className="sb-paper" style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap", margin: "0 0 10px" }}>
             <div style={{ textAlign: "center", minWidth: 120 }}>
               <div style={{ fontSize: 54, fontWeight: 800, lineHeight: 1, color: "#2a2721" }}>{score}</div>
               <div style={{ fontSize: 13, color: "#6c6455" }}>{tr("points")} · {tr("grade")} {grade}</div>
@@ -584,6 +587,16 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           </section>
         );
       })()}
+
+      <div className="sb-rh-sticky">
+      <button
+        type="button"
+        className="sb-startbar"
+        onClick={() => (running ? stop() : start())}
+      >
+        {running ? <Square size={18} /> : <Play size={18} />}
+        {running ? tr("Stop") : tr("Start")}
+      </button>
 
       <section className="sb-paper">
         <svg viewBox={`0 0 ${VB_W} 300`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label={tr("Rhythm staff: current and next bar")}>
@@ -635,43 +648,6 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           </span>
         </div>
       </section>
-
-      <button
-        type="button"
-        className="sb-startbar"
-        onClick={() => (running ? stop() : start())}
-      >
-        {running ? <Square size={18} /> : <Play size={18} />}
-        {running ? tr("Stop") : tr("Start")}
-      </button>
-
-      <div className="sb-rh-controls">
-        <div className="sb-seg" role="group" aria-label={tr("Rhythm type")} style={{ width: "100%" }}>
-          {(Object.keys(KIND_LABEL) as RhythmKind[]).map((k) => (
-            <button key={k} type="button" aria-pressed={kind === k} className={kind === k ? "sb-seg-on" : ""} style={{ flex: 1 }} onClick={() => setKind(k)}>
-              {tr(KIND_LABEL[k])}
-            </button>
-          ))}
-        </div>
-        <div className="sb-group" style={{ marginTop: 12 }}>
-          <div className="sb-item">
-            <span>{tr("Tempo")}</span>
-            <Stepper minus value={`${tempo}`} downLabel={tr("Slower")} upLabel={tr("Faster")} downDisabled={tempo <= 40} upDisabled={tempo >= 200} onDown={() => setTempo((t) => Math.max(40, t - 5))} onUp={() => setTempo((t) => Math.min(200, t + 5))} />
-          </div>
-          <div className="sb-item">
-            <span>{tr("Length")}</span>
-            <Stepper minus value={`${rounds} ${tr("bars")}`} downLabel={tr("Fewer bars")} upLabel={tr("More bars")} downDisabled={rounds <= 4} upDisabled={rounds >= 16} onDown={() => setRounds((r) => Math.max(4, r - 4))} onUp={() => setRounds((r) => Math.min(16, r + 4))} />
-          </div>
-          <div className="sb-item">
-            <span>{tr("Guide sound")}</span>
-            <Switch on={guide} label={tr("Guide sound")} onClick={() => setGuide((v) => !v)} />
-          </div>
-          <div className="sb-item">
-            <span>{tr("Count-in (1 bar)")}</span>
-            <Switch on={countIn} label={tr("Count-in (1 bar)")} onClick={() => setCountIn((v) => !v)} />
-          </div>
-        </div>
-      </div>
 
       <section className="sb-board">
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 6, padding: "0 4px 4px", fontSize: 13 }}>
@@ -792,6 +768,36 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
         </div>
         <div id="legend">{tr("Notes come from the chord tones of the current bar. Tap the exact pitch: the same note at another octave does not count.")}</div>
       </section>
+      </div>
+
+      <div className="sb-rh-controls">
+        <div className="sb-seg" role="group" aria-label={tr("Rhythm type")} style={{ width: "100%" }}>
+          {(Object.keys(KIND_LABEL) as RhythmKind[]).map((k) => (
+            <button key={k} type="button" aria-pressed={kind === k} className={kind === k ? "sb-seg-on" : ""} style={{ flex: 1 }} onClick={() => setKind(k)}>
+              {tr(KIND_LABEL[k])}
+            </button>
+          ))}
+        </div>
+        <div className="sb-group" style={{ marginTop: 12 }}>
+          <div className="sb-item">
+            <span>{tr("Tempo")}</span>
+            <Stepper minus value={`${tempo}`} downLabel={tr("Slower")} upLabel={tr("Faster")} downDisabled={tempo <= 40} upDisabled={tempo >= 200} onDown={() => setTempo((t) => Math.max(40, t - 5))} onUp={() => setTempo((t) => Math.min(200, t + 5))} />
+          </div>
+          <div className="sb-item">
+            <span>{tr("Length")}</span>
+            <Stepper minus value={`${rounds} ${tr("bars")}`} downLabel={tr("Fewer bars")} upLabel={tr("More bars")} downDisabled={rounds <= 4} upDisabled={rounds >= 16} onDown={() => setRounds((r) => Math.max(4, r - 4))} onUp={() => setRounds((r) => Math.min(16, r + 4))} />
+          </div>
+          <div className="sb-item">
+            <span>{tr("Guide sound")}</span>
+            <Switch on={guide} label={tr("Guide sound")} onClick={() => setGuide((v) => !v)} />
+          </div>
+          <div className="sb-item">
+            <span>{tr("Count-in (1 bar)")}</span>
+            <Switch on={countIn} label={tr("Count-in (1 bar)")} onClick={() => setCountIn((v) => !v)} />
+          </div>
+        </div>
+      </div>
+
     </>
   );
 }
