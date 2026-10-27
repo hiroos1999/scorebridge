@@ -22,6 +22,11 @@ type Props = {
   useFlats: boolean;
   timeSig: TimeSignature;
   tr?: (s: string) => string;
+  // 親(StaffToFretboard)の「Fretboard view」設定。コードトーンモードと同じ範囲・見た目で出題・表示する
+  view: { focusOn: boolean; lo: number; hi: number; viewFrets: number };
+  viewButton?: React.ReactNode;
+  viewSheet?: React.ReactNode;
+  boardRef?: React.RefObject<HTMLElement | null>;
 };
 
 const KIND_LABEL: Record<RhythmKind, string> = {
@@ -61,8 +66,8 @@ const EPS = 1e-6;
 
 // 開放弦(1弦=E4 … 6弦=E2)のMIDIノート番号
 const OPEN_MIDI = [64, 59, 55, 50, 45, 40];
-const FRETS = 12;
-const TARGET_STRINGS = 6; // 出題は全弦・開放弦〜12フレット
+const FRETS = 17; // 描画・タップの最大フレット(出題は表示中の範囲だけ)
+const TARGET_STRINGS = 6;
 const MIDI_LO = 48; // 出題する音域(五線に収まるよう C3〜C5 のギター音)
 const MIDI_HI = 72;
 
@@ -72,7 +77,7 @@ const SHARP_LETTER = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
 const SHARP_ACC = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
 const FLAT_LETTER = [0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6];
 const FLAT_ACC = [0, -1, 0, -1, 0, 0, -1, 0, -1, 0, -1, 0];
-const DEGREE_BY_INTERVAL: Record<number, string> = { 0: "R", 3: "♭3", 4: "3", 6: "♭5", 7: "5", 9: "6", 10: "♭7", 11: "7" };
+const DEGREE_BY_INTERVAL: Record<number, string> = { 0: "1", 3: "♭3", 4: "3", 6: "♭5", 7: "5", 9: "6", 10: "♭7", 11: "7" };
 
 type Pos = { s: number; f: number };
 type PlanEvent = { beat: number; dur: number; pos: Pos; pc: number; midi: number; written: number; degree: string };
@@ -82,11 +87,11 @@ function mod12(n: number) {
   return ((n % 12) + 12) % 12;
 }
 
-function pickPos(pc: number, prev: Pos): Pos {
+function pickPos(pc: number, prev: Pos, lo: number, hi: number): Pos {
   let best: Pos | null = null;
   let bestCost = Infinity;
   for (let s = 0; s < TARGET_STRINGS; s++) {
-    for (let f = 0; f <= FRETS; f++) {
+    for (let f = lo; f <= hi; f++) {
       const m = OPEN_MIDI[s] + f;
       if (mod12(m) !== pc || m < MIDI_LO || m > MIDI_HI) continue;
       const cost = Math.abs(s - prev.s) * 2 + Math.abs(f - prev.f) + Math.abs(m - (OPEN_MIDI[prev.s] + prev.f)) * 0.6;
@@ -103,7 +108,10 @@ function freq(midi: number) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-export default function RhythmPractice({ measures, chordRoot, chordType, useFlats, timeSig, tr: trProp }: Props) {
+export default function RhythmPractice({ measures, chordRoot, chordType, useFlats, timeSig, tr: trProp, view, viewButton, viewSheet, boardRef }: Props) {
+  // 出題・表示するフレット範囲(Fretboard viewの設定に従う)
+  const rLo = view.focusOn ? view.lo : 0;
+  const rHi = Math.min(FRETS, view.focusOn ? view.hi : view.viewFrets);
   const tr = trProp ?? ((x: string) => x);
   const [kind, setKind] = useState<RhythmKind>("8th");
   const [tempo, setTempo] = useState(70);
@@ -143,14 +151,14 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
     });
   }, [measures, chordRoot, chordType]);
 
-  const settingsRef = useRef({ kind, barBeats, chordsPerBar });
-  settingsRef.current = { kind, barBeats, chordsPerBar };
+  const settingsRef = useRef({ kind, barBeats, chordsPerBar, rLo, rHi });
+  settingsRef.current = { kind, barBeats, chordsPerBar, rLo, rHi };
 
   function ensurePlan(upTo: number) {
     const plan = planRef.current;
     while (plan.length <= upTo) {
       const i = plan.length;
-      const { kind: k, barBeats: bb, chordsPerBar: cpb } = settingsRef.current;
+      const { kind: k, barBeats: bb, chordsPerBar: cpb, rLo: lo, rHi: hi } = settingsRef.current;
       const chord = cpb[i % cpb.length];
       const intervals = CHORD_TYPES[chord.kind] ?? CHORD_TYPES.maj7;
       const candidates = PATTERNS[k].map((p) => p.filter((b) => b < bb - EPS)).filter((p) => p.length > 0);
@@ -160,7 +168,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
         const iv = intervals[order[degreeCursorRef.current % order.length] % intervals.length];
         degreeCursorRef.current += 1;
         const pc = mod12(chord.root + iv);
-        const pos = pickPos(pc, prevPosRef.current);
+        const pos = pickPos(pc, prevPosRef.current, lo, hi);
         prevPosRef.current = pos;
         const midi = OPEN_MIDI[pos.s] + pos.f;
         const written = midi + 12; // 記譜はギターの実音の1オクターブ上
@@ -327,17 +335,24 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
   useEffect(() => {
     if (running) stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, tempo, barBeats, chordsPerBar, rounds]);
+  }, [kind, tempo, barBeats, chordsPerBar, rounds, rLo, rHi]);
 
   // --- 指板のタップ ---
-  const FB = { w: 940, h: 214, left: 124, fretW: 66, top: 34, gap: 28 };
-  const fx = (f: number) => (f === 0 ? FB.left - 20 : FB.left + f * FB.fretW - FB.fretW / 2);
+  // コードトーンモードの指板と同じ寸法(開放弦の音はナットの1フレット分左)
+  const FB = { left: 150, fretW: 68, top: 30, gap: 30 };
+  const fx = (f: number) => FB.left + f * FB.fretW - FB.fretW / 2;
+  const boardX0 = view.focusOn ? (rLo === 0 ? FB.left - 80 : FB.left + (rLo - 1) * FB.fretW - 34) : 0;
+  const boardX1 = view.focusOn ? FB.left + rHi * FB.fretW + 12 : FB.left + rHi * FB.fretW + 24;
   function onFretboardPointerDown(e: React.PointerEvent<SVGSVGElement>) {
     const ctx = ctxRef.current;
     if (!ctx || !running) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * FB.w;
-    const y = ((e.clientY - rect.top) / rect.height) * FB.h;
+    const svg = e.currentTarget;
+    const m = svg.getScreenCTM();
+    if (!m) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const { x, y } = pt.matrixTransform(m.inverse());
     const s = Math.min(5, Math.max(0, Math.round((y - FB.top) / FB.gap)));
     const f = x < FB.left ? 0 : Math.min(FRETS, Math.floor((x - FB.left) / FB.fretW) + 1);
     const midi = OPEN_MIDI[s] + f;
@@ -649,19 +664,21 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
         </div>
       </section>
 
-      <section className="sb-board">
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "nowrap", gap: 8, padding: "0 4px 4px", fontSize: 13, minHeight: 22 }}>
-          <span style={{ color: "var(--accent)", fontWeight: 700, minWidth: 0, flex: "1 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {running && target ? `${tr("Next")}: ${target.ev.degree} (${names[target.ev.pc]}) — ${tr("tap any glowing dot on the beat")}` : tr("Chord tones of the current chord")}
+      <section ref={boardRef} className="sb-board">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 6px", minHeight: 40 }}>
+          {viewButton}
+          <span style={{ color: "var(--accent)", fontWeight: 700, fontSize: 13, minWidth: 0, flex: "1 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {running && target ? `${tr("Next")}: ${target.ev.degree} (${names[target.ev.pc]})` : tr("Chord tones of the current chord")}
           </span>
-          <span style={{ color: "var(--text-secondary)", flex: "0 0 auto", whiteSpace: "nowrap" }}>
-            {lastTap ? `${tr("Last tap")}: ${verdictText[lastTap.verdict]}` : tr("Pitch and timing are both scored")}
+          <span style={{ color: "var(--text-secondary)", fontSize: 13, flex: "0 0 auto", whiteSpace: "nowrap" }}>
+            {lastTap ? verdictText[lastTap.verdict] : ""}
           </span>
         </div>
+        {viewSheet}
         <div id="fretboard-wrap">
           <svg
-            viewBox={`0 0 ${FB.w} ${FB.h}`}
-            style={{ width: "100%", height: "auto", display: "block", minWidth: 660, touchAction: "none", cursor: running ? "pointer" : "default" }}
+            viewBox={`${boardX0} -14 ${boardX1 - boardX0} 234`}
+            style={{ width: "100%", height: "auto", display: "block", minWidth: view.focusOn ? undefined : view.viewFrets === 17 ? "880px" : "660px", touchAction: "none", cursor: running ? "pointer" : "default" }}
             onPointerDown={onFretboardPointerDown}
             role="img"
             aria-label={tr("Guitar fretboard: glowing dots are the next note")}
@@ -669,66 +686,71 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             <defs>
               <linearGradient id="ebony-r" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stopColor="#34251b" />
+                <stop offset="0.5" stopColor="#241912" />
                 <stop offset="1" stopColor="#1b120d" />
               </linearGradient>
             </defs>
             <rect x={FB.left} y={FB.top - 16} width={FRETS * FB.fretW} height={5 * FB.gap + 32} rx={4} fill="url(#ebony-r)" />
-            {[3, 5, 7, 9].map((f) => (
+            {[3, 5, 7, 9, 15, 17].map((f) => (
               <circle key={f} cx={FB.left + f * FB.fretW - FB.fretW / 2} cy={FB.top + 2.5 * FB.gap} r={5} fill="#e8e2d2" opacity={0.22} />
             ))}
             {[1.5, 3.5].map((k) => (
-              <circle key={k} cx={FB.left + FRETS * FB.fretW - FB.fretW / 2} cy={FB.top + k * FB.gap} r={5} fill="#e8e2d2" opacity={0.22} />
+              <circle key={k} cx={FB.left + 12 * FB.fretW - FB.fretW / 2} cy={FB.top + k * FB.gap} r={5} fill="#e8e2d2" opacity={0.22} />
             ))}
             {Array.from({ length: FRETS + 1 }, (_, f) => (
               <g key={f}>
                 <line x1={FB.left + f * FB.fretW} x2={FB.left + f * FB.fretW} y1={FB.top} y2={FB.top + 5 * FB.gap} stroke={f === 0 ? "#d8d2c4" : "#8d877b"} strokeWidth={f === 0 ? 5 : 2} />
-                {[3, 5, 7, 9, 12].includes(f) && (
-                  <text x={FB.left + f * FB.fretW - FB.fretW / 2} y={FB.top - 22} textAnchor="middle" fontSize={13} fill="var(--text-secondary)">
+                {(view.focusOn ? f >= rLo && f <= rHi : [3, 5, 7, 9, 12, 15, 17].includes(f)) && f > 0 && (
+                  <text x={FB.left + f * FB.fretW - FB.fretW / 2} y={FB.top - 21} textAnchor="middle" fontSize={view.focusOn ? 18 : 13} fontWeight={view.focusOn ? 700 : undefined} fill="var(--text-secondary)">
                     {f}
                   </text>
                 )}
               </g>
             ))}
-            {OPEN_MIDI.map((_, s) => (
-              <g key={s}>
-                <line x1={FB.left} x2={FB.left + FRETS * FB.fretW} y1={FB.top + s * FB.gap} y2={FB.top + s * FB.gap} stroke="#cfc8b8" strokeOpacity={0.75} strokeWidth={0.8 + s * 0.35} />
-                <text x={FB.left - 40} y={FB.top + s * FB.gap + 4} textAnchor="end" fontSize={12} fill="var(--text-secondary)">
-                  {`${tr("String")} ${s + 1} · ${["E", "B", "G", "D", "A", "E"][s]}`}
+            {OPEN_MIDI.map((_, sIdx) => (
+              <g key={sIdx}>
+                <line x1={FB.left} x2={FB.left + FRETS * FB.fretW} y1={FB.top + sIdx * FB.gap} y2={FB.top + sIdx * FB.gap} stroke="#cfc8b8" strokeOpacity={0.75} strokeWidth={0.8 + sIdx * 0.35} />
+                <text
+                  x={view.focusOn ? boardX0 + 3 : FB.left - 82}
+                  y={FB.top + sIdx * FB.gap + 4}
+                  textAnchor={view.focusOn ? "start" : "end"}
+                  fontSize={12}
+                  fill="var(--text-secondary)"
+                  style={view.focusOn ? { stroke: "#241912", strokeWidth: 5, paintOrder: "stroke" } : undefined}
+                >
+                  {view.focusOn ? `${sIdx + 1}·${["E", "B", "G", "D", "A", "E"][sIdx]}` : `${tr("String")} ${sIdx + 1} · ${["E", "B", "G", "D", "A", "E"][sIdx]}`}
                 </text>
               </g>
             ))}
-            {/* 現在のコードの構成音(Chord tones と同じ色分け) */}
-            {running &&
-              leftPlan &&
-              (() => {
-                const intervals = CHORD_TYPES[leftPlan.chordKind] ?? CHORD_TYPES.maj7;
-                const role = (iv: number) => (iv === 0 ? "danger" : iv === 3 || iv === 4 ? "warning" : iv === 6 || iv === 7 || iv === 10 || iv === 11 ? "success" : "pro");
-                const dots: React.ReactNode[] = [];
-                for (let s = 0; s < TARGET_STRINGS; s++) {
-                  for (let f = 0; f <= FRETS; f++) {
-                    if (OPEN_MIDI[s] + f < MIDI_LO || OPEN_MIDI[s] + f > MIDI_HI) continue;
-                    const iv = intervals.find((v) => mod12(leftPlan.chordRoot + v) === mod12(OPEN_MIDI[s] + f));
-                    if (iv === undefined) continue;
-                    const r = role(iv);
-                    const cx = fx(f);
-                    const cy = FB.top + s * FB.gap;
-                    dots.push(
-                      <g key={`${s}-${f}`} opacity={0.7}>
-                        <circle cx={cx} cy={cy} r={10} fill={`var(--${r})`} />
-                        <text x={cx} y={cy + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill={`var(--on-${r})`}>
-                          {DEGREE_BY_INTERVAL[iv] ?? ""}
-                        </text>
-                      </g>
-                    );
-                  }
+            {/* 現在のコードの構成音(コードトーンモードと同じ色・大きさ・表記) */}
+            {(() => {
+              const ch = leftPlan ? { root: leftPlan.chordRoot, kind: leftPlan.chordKind } : chordsPerBar[0];
+              const intervals = CHORD_TYPES[ch.kind] ?? CHORD_TYPES.maj7;
+              const role = (iv: number) => (iv === 0 ? "danger" : iv === 3 || iv === 4 ? "warning" : iv === 6 || iv === 7 || iv === 10 || iv === 11 ? "success" : "pro");
+              const dots: React.ReactNode[] = [];
+              for (let s = 0; s < TARGET_STRINGS; s++) {
+                for (let f = rLo; f <= rHi; f++) {
+                  const iv = intervals.find((v) => mod12(ch.root + v) === mod12(OPEN_MIDI[s] + f));
+                  if (iv === undefined) continue;
+                  const cx = fx(f);
+                  const cy = FB.top + s * FB.gap;
+                  dots.push(
+                    <g key={`${s}-${f}`}>
+                      <circle cx={cx} cy={cy} r={15} fill={`var(--${role(iv)})`} />
+                      <text x={cx} y={cy + 5} textAnchor="middle" fontSize={13} fontWeight="bold" style={{ fill: "#fff", stroke: "rgba(0,0,0,0.55)", strokeWidth: 2, paintOrder: "stroke" }}>
+                        {DEGREE_BY_INTERVAL[iv] ?? ""}
+                      </text>
+                    </g>
+                  );
                 }
-                return dots;
-              })()}
-            {/* 次の目標: 同じ音(ピッチクラス)が指板上のどこにあっても、全部光らせる */}
+              }
+              return dots;
+            })()}
+            {/* 次の目標: 同じ音が表示範囲のどこにあっても、全部光らせる */}
             {running && target && (
               <g>
                 {OPEN_MIDI.flatMap((open, s) =>
-                  Array.from({ length: FRETS + 1 }, (_, i) => i)
+                  Array.from({ length: rHi - rLo + 1 }, (_, i) => rLo + i)
                     .filter((f) => open + f === target.ev.midi)
                     .map((f) => {
                       const cx = fx(f);
@@ -736,8 +758,8 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
                       return (
                         <g key={`t${s}-${f}`}>
                           <circle cx={cx} cy={cy} r={24} fill="none" stroke="#d9b65a" strokeWidth={3} />
-                          <circle cx={cx} cy={cy} r={31} fill="none" stroke="#d9b65a" strokeWidth={1.5} opacity={0.5} />
-                          <circle cx={cx} cy={cy} r={13} fill="#d9b65a" />
+                          <circle cx={cx} cy={cy} r={30} fill="none" stroke="#d9b65a" strokeWidth={1.5} opacity={0.5} />
+                          <circle cx={cx} cy={cy} r={16} fill="#d9b65a" />
                           <text x={cx} y={cy + 5} textAnchor="middle" fontSize={14} fontWeight={700} fill="#1a1511">
                             {target.ev.degree}
                           </text>
@@ -748,14 +770,14 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
               </g>
             )}
             {/* 直前のタップ位置 */}
-            {lastTap && (
-              <circle cx={fx(lastTap.f)} cy={FB.top + lastTap.s * FB.gap} r={16} fill="none" stroke={verdictColor[lastTap.verdict]} strokeWidth={4} />
+            {lastTap && lastTap.f >= rLo && lastTap.f <= rHi && (
+              <circle cx={fx(lastTap.f)} cy={FB.top + lastTap.s * FB.gap} r={20} fill="none" stroke={verdictColor[lastTap.verdict]} strokeWidth={4} />
             )}
           </svg>
         </div>
         <div id="degree-legend" aria-label={tr("Colour key")} style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}>
           {[
-            { label: tr("R · root"), role: "danger" },
+            { label: tr("1 · root"), role: "danger" },
             { label: tr("3 · 3rd"), role: "warning" },
             { label: tr("5, 7 · 5th, 7th"), role: "success" },
             { label: tr("6 · 6th"), role: "pro" },

@@ -1735,6 +1735,134 @@ export default function StaffToFretboard({
   const visibleShapes = shapeInstances.filter((sh) => shapeSel === null || sh.name === shapeSel);
   const shapeNoteKeys = new Set(visibleShapes.flatMap((sh) => sh.notes.map((n) => `${n.s}:${n.f}`)));
 
+  const fretboardViewButton = (
+        <button
+          type="button"
+          aria-expanded={boardOpen}
+          onClick={() => {
+            setSheetBottom(narrowFretboard ? Math.round(boardRef.current?.getBoundingClientRect().height ?? 0) : 0);
+            setBoardOpen((v) => !v);
+          }}
+          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(224,184,79,0.55)", background: "transparent", color: "var(--accent)", fontWeight: 700 }}
+        >
+          {tr("Fretboard view")} {boardOpen ? "▴" : "▾"}
+        </button>
+  );
+  const fretboardSheet = (
+      <>{boardOpen && (
+        <>
+          <div className="sb-sheet-backdrop" style={{ bottom: sheetBottom }} onClick={() => setBoardOpen(false)} />
+          <div className="sb-sheet" role="dialog" aria-modal="true" aria-label={tr("Fretboard view")} style={{ bottom: sheetBottom }}>
+            <div className="sb-sheet-grabber" aria-hidden="true" />
+            <div className="sb-sheet-head">
+              <span style={{ width: 64 }} />
+              <span className="sb-sheet-title">{tr("Fretboard view")}</span>
+              <button type="button" className="sb-sheet-done" onClick={() => setBoardOpen(false)}>{tr("Done")}</button>
+            </div>
+
+            <div className="sb-group-title">{tr("Display")}</div>
+            <div className="sb-group">
+              {mode === "tones" && (
+              <div className="sb-item">
+                <span>{tr("CAGED shapes")}</span>
+                <Switch on={shapesOn} label={tr("CAGED shapes")} onClick={() => { setShapesOn((v) => !v); setShapeSel(null); }} />
+              </div>
+              )}
+              <div className="sb-item">
+                <span>{tr("Zoom frets (Focus)")}</span>
+                <Switch on={focusOn} label={tr("Zoom frets (Focus)")} onClick={() => setFocusOn((v) => !v)} />
+              </div>
+              {focusOn ? (
+                <>
+                  <div className="sb-item">
+                    <span>{tr("Range")}</span>
+                    <Stepper
+                      value={`${tr("Frets")} ${focusLo}–${focusHi}`}
+                      downLabel={tr("Move range down")}
+                      upLabel={tr("Move range up")}
+                      downDisabled={focusLo <= 0}
+                      upDisabled={focusHi >= FRETS}
+                      onDown={() => shiftFocus(-1)}
+                      onUp={() => shiftFocus(1)}
+                    />
+                  </div>
+                  <div className="sb-item">
+                    <span>{tr("Width")}</span>
+                    <Stepper
+                      value={`${focusW} ${tr("frets")}`}
+                      downLabel={tr("Fewer frets")}
+                      upLabel={tr("More frets")}
+                      downDisabled={focusW <= 4}
+                      upDisabled={focusW >= 8}
+                      onDown={() => setFocusW((w) => Math.max(4, w - 1))}
+                      onUp={() => setFocusW((w) => Math.min(8, w + 1))}
+                      minus
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="sb-item">
+                  <span>{tr("Visible frets")}</span>
+                  <div className="sb-seg" role="group" aria-label={tr("Visible frets")}>
+                    {([12, 17] as const).map((n) => (
+                      <button key={n} type="button" aria-pressed={viewFrets === n} className={viewFrets === n ? "sb-seg-on" : ""} onClick={() => setViewFrets(n)}>
+                        {n} {tr("frets")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {mode === "tones" && (
+              <>
+            <div className="sb-group-title">{tr("Note labels")}</div>
+            <div className="sb-seg" role="group" aria-label={tr("Note labels")} style={{ width: "100%" }}>
+              {([["key", "Do Re Mi"], ["chord", "1 3 5 7"]] as const).map(([m, label]) => (
+                <button key={m} type="button" aria-pressed={labelMode === m} className={labelMode === m ? "sb-seg-on" : ""} style={{ flex: 1 }} onClick={() => setLabelMode(m)}>
+                  {tr(label)}
+                </button>
+              ))}
+            </div>
+
+              </>
+            )}
+
+            {mode === "tones" && shapesOn && (
+              <>
+                <div className="sb-group-title">{tr("Shapes")}</div>
+                {shapeQuality ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <button type="button" aria-pressed={shapeSel === null} className="sb-chip" style={{ background: shapeSel === null ? "var(--accent)" : "transparent", color: shapeSel === null ? "var(--on-accent)" : "var(--text-primary)", borderColor: shapeSel === null ? "var(--accent)" : "var(--border-strong)" }} onClick={() => setShapeSel(null)}>
+                      {tr("All")}
+                    </button>
+                    {shapeList.map((sh) => (
+                      <button
+                        key={sh.name}
+                        type="button"
+                        aria-pressed={shapeSel === sh.name}
+                        className="sb-chip"
+                        style={{ borderColor: SHAPE_COLORS[sh.name], background: shapeSel === sh.name ? SHAPE_COLORS[sh.name] : "transparent", color: shapeSel === sh.name ? "#1a1511" : "var(--text-primary)" }}
+                        onClick={() => {
+                          setShapeSel(shapeSel === sh.name ? null : sh.name);
+                          if (focusOn && shapeSel !== sh.name) setFocusLoState(Math.max(0, Math.min(...sh.notes.map((n) => n.f)) - 1));
+                        }}
+                      >
+                        {sh.name} · {sh.start === 0 ? tr("open") : sh.start}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                    {tr("Shapes are available for maj7, 7, 6, m7, m6, mMaj7, dim and m7♭5 chords. Place or select one of these chords.")}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}</>
+  );
   const fbTop = 30;
   const fretW = 68;
   const stringGap = 30;
@@ -2436,7 +2564,7 @@ export default function StaffToFretboard({
           .sb-rh-sticky .sb-startbar { height: 44px; margin: 0 0 6px; }
           .sb-rh-sticky .sb-paper { margin-bottom: 6px; }
           .sb-rh-sticky .sb-board { padding-bottom: 8px; }
-          .sb-rh-sticky #legend { display: none; }
+          .sb-rh-sticky #legend, .sb-rh-sticky #degree-legend { display: none !important; }
         }
         .sb-rh-controls .sb-seg button { padding: 0 4px; font-size: 13px; white-space: nowrap; }
         .sb-lang { margin-left:auto; } .sb-lang button { height:30px; padding:0 10px; font-size:13px; }
@@ -2905,7 +3033,18 @@ export default function StaffToFretboard({
       )}
 
       {mode === "rhythm" && (
-        <RhythmPractice measures={measures} chordRoot={chordRoot} chordType={chordType} useFlats={useFlats} timeSig={timeSig} tr={tr} />
+        <RhythmPractice
+          measures={measures}
+          chordRoot={chordRoot}
+          chordType={chordType}
+          useFlats={useFlats}
+          timeSig={timeSig}
+          tr={tr}
+          view={{ focusOn, lo: focusLo, hi: focusHi, viewFrets }}
+          viewButton={fretboardViewButton}
+          viewSheet={fretboardSheet}
+          boardRef={boardRef}
+        />
       )}
       {mode === "tones" && (
       <>
@@ -3277,17 +3416,7 @@ export default function StaffToFretboard({
 
       <section ref={boardRef} className="sb-board sb-board-tones">
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
-        <button
-          type="button"
-          aria-expanded={boardOpen}
-          onClick={() => {
-            setSheetBottom(narrowFretboard ? Math.round(boardRef.current?.getBoundingClientRect().height ?? 0) : 0);
-            setBoardOpen((v) => !v);
-          }}
-          style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1px solid rgba(224,184,79,0.55)", background: "transparent", color: "var(--accent)", fontWeight: 700 }}
-        >
-          {tr("Fretboard view")} {boardOpen ? "▴" : "▾"}
-        </button>
+        {fretboardViewButton}
         <span className="sb-mobile-only" style={{ marginLeft: "auto", gap: 6 }}>
           <IconButton
             id="play-btn-mobile"
@@ -3308,112 +3437,7 @@ export default function StaffToFretboard({
           ].filter(Boolean).join(" · ")}
         </span>
       </div>
-      {boardOpen && (
-        <>
-          <div className="sb-sheet-backdrop" style={{ bottom: sheetBottom }} onClick={() => setBoardOpen(false)} />
-          <div className="sb-sheet" role="dialog" aria-modal="true" aria-label={tr("Fretboard view")} style={{ bottom: sheetBottom }}>
-            <div className="sb-sheet-grabber" aria-hidden="true" />
-            <div className="sb-sheet-head">
-              <span style={{ width: 64 }} />
-              <span className="sb-sheet-title">{tr("Fretboard view")}</span>
-              <button type="button" className="sb-sheet-done" onClick={() => setBoardOpen(false)}>{tr("Done")}</button>
-            </div>
-
-            <div className="sb-group-title">{tr("Display")}</div>
-            <div className="sb-group">
-              <div className="sb-item">
-                <span>{tr("CAGED shapes")}</span>
-                <Switch on={shapesOn} label={tr("CAGED shapes")} onClick={() => { setShapesOn((v) => !v); setShapeSel(null); }} />
-              </div>
-              <div className="sb-item">
-                <span>{tr("Zoom frets (Focus)")}</span>
-                <Switch on={focusOn} label={tr("Zoom frets (Focus)")} onClick={() => setFocusOn((v) => !v)} />
-              </div>
-              {focusOn ? (
-                <>
-                  <div className="sb-item">
-                    <span>{tr("Range")}</span>
-                    <Stepper
-                      value={`${tr("Frets")} ${focusLo}–${focusHi}`}
-                      downLabel={tr("Move range down")}
-                      upLabel={tr("Move range up")}
-                      downDisabled={focusLo <= 0}
-                      upDisabled={focusHi >= FRETS}
-                      onDown={() => shiftFocus(-1)}
-                      onUp={() => shiftFocus(1)}
-                    />
-                  </div>
-                  <div className="sb-item">
-                    <span>{tr("Width")}</span>
-                    <Stepper
-                      value={`${focusW} ${tr("frets")}`}
-                      downLabel={tr("Fewer frets")}
-                      upLabel={tr("More frets")}
-                      downDisabled={focusW <= 4}
-                      upDisabled={focusW >= 8}
-                      onDown={() => setFocusW((w) => Math.max(4, w - 1))}
-                      onUp={() => setFocusW((w) => Math.min(8, w + 1))}
-                      minus
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="sb-item">
-                  <span>{tr("Visible frets")}</span>
-                  <div className="sb-seg" role="group" aria-label={tr("Visible frets")}>
-                    {([12, 17] as const).map((n) => (
-                      <button key={n} type="button" aria-pressed={viewFrets === n} className={viewFrets === n ? "sb-seg-on" : ""} onClick={() => setViewFrets(n)}>
-                        {n} {tr("frets")}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="sb-group-title">{tr("Note labels")}</div>
-            <div className="sb-seg" role="group" aria-label={tr("Note labels")} style={{ width: "100%" }}>
-              {([["key", "Do Re Mi"], ["chord", "1 3 5 7"]] as const).map(([m, label]) => (
-                <button key={m} type="button" aria-pressed={labelMode === m} className={labelMode === m ? "sb-seg-on" : ""} style={{ flex: 1 }} onClick={() => setLabelMode(m)}>
-                  {tr(label)}
-                </button>
-              ))}
-            </div>
-
-            {shapesOn && (
-              <>
-                <div className="sb-group-title">{tr("Shapes")}</div>
-                {shapeQuality ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    <button type="button" aria-pressed={shapeSel === null} className="sb-chip" style={{ background: shapeSel === null ? "var(--accent)" : "transparent", color: shapeSel === null ? "var(--on-accent)" : "var(--text-primary)", borderColor: shapeSel === null ? "var(--accent)" : "var(--border-strong)" }} onClick={() => setShapeSel(null)}>
-                      {tr("All")}
-                    </button>
-                    {shapeList.map((sh) => (
-                      <button
-                        key={sh.name}
-                        type="button"
-                        aria-pressed={shapeSel === sh.name}
-                        className="sb-chip"
-                        style={{ borderColor: SHAPE_COLORS[sh.name], background: shapeSel === sh.name ? SHAPE_COLORS[sh.name] : "transparent", color: shapeSel === sh.name ? "#1a1511" : "var(--text-primary)" }}
-                        onClick={() => {
-                          setShapeSel(shapeSel === sh.name ? null : sh.name);
-                          if (focusOn && shapeSel !== sh.name) setFocusLoState(Math.max(0, Math.min(...sh.notes.map((n) => n.f)) - 1));
-                        }}
-                      >
-                        {sh.name} · {sh.start === 0 ? tr("open") : sh.start}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                    {tr("Shapes are available for maj7, 7, 6, m7, m6, mMaj7, dim and m7♭5 chords. Place or select one of these chords.")}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </>
-      )}
+      {fretboardSheet}
       <div id="fretboard-wrap">
         <svg
           id="fretboard"

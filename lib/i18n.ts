@@ -98,7 +98,7 @@ export const JA: Record<string, string> = {
   "Presets…": "プリセット…",
   "Press Start. You hear the right note on each beat; tap any glowing dot with it.": "スタートを押すと、拍ごとに正しい音が鳴ります。同じ音の光る点をタップしてください。",
   "Previous measure": "前の小節",
-  "R · root": "R · ルート",
+  "1 · root": "1 · ルート",
   "Range": "範囲",
   "Re, La · 2nd, 6th": "レ, ラ · 2度, 6度",
   "Remove last": "最後を取り消す",
