@@ -2660,7 +2660,7 @@ export default function StaffToFretboard({
             <option value="">{tr("Song templates…")}</option>
             {(Object.keys(TEMPLATE_CATEGORY_LABELS) as TemplateCategory[]).map((cat) => (
               <optgroup key={cat} label={TEMPLATE_CATEGORY_LABELS[cat]}>
-                {TEMPLATES.filter((t) => t.category === cat).map((t) => (
+                {TEMPLATES.filter((t) => t.category === cat).sort((a, b) => a.label.localeCompare(b.label, "en", { sensitivity: "base", ignorePunctuation: true })).map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.label}
                   </option>
