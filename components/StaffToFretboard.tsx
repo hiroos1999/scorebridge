@@ -3500,6 +3500,34 @@ export default function StaffToFretboard({
         </span>
       </div>
       {fretboardSheet}
+      {dropOn && (
+        <div role="group" aria-label={tr("String set")} style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0 0 6px" }}>
+          {([null, 0, 1, 2] as (number | null)[]).map((i) => (
+            <button
+              key={String(i)}
+              type="button"
+              aria-pressed={dropSet === i}
+              className="sb-chip"
+              style={{ minHeight: 32, padding: "0 12px", borderColor: dropSet === i ? "var(--accent)" : "var(--border-strong)", background: dropSet === i ? "var(--accent)" : "transparent", color: dropSet === i ? "var(--on-accent)" : "var(--text-primary)" }}
+              onClick={() => {
+                setDropSet(i);
+                if (i !== null && focusOn && displayedHarmony) {
+                  const first = drop2Voicings(displayedHarmony.root, displayedHarmony.kind, FRETS)
+                    .filter((v) => v.set === i && (dropInv === null || v.bass === dropInv))
+                    .sort((a, b) => a.start - b.start)
+                    .find((v) => v.start + 4 >= focusLo && v.start <= focusHi) ?? null;
+                  if (!first) {
+                    const any = drop2Voicings(displayedHarmony.root, displayedHarmony.kind, FRETS).filter((v) => v.set === i && (dropInv === null || v.bass === dropInv)).sort((a, b) => a.start - b.start)[0];
+                    if (any) setFocusLoState(Math.max(0, any.start - 1));
+                  }
+                }
+              }}
+            >
+              {i === null ? tr("All") : `${DROP2_SETS[i].label} ${tr("strings")}`}
+            </button>
+          ))}
+        </div>
+      )}
       <div id="fretboard-wrap">
         <svg
           id="fretboard"
