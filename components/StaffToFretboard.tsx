@@ -2,7 +2,7 @@
 
 import { LANG_STORAGE_KEY, makeTr, type Lang } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Sparkles, Square, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Sparkles, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES, TEMPLATE_CATEGORY_LABELS, type TemplateCategory } from "@/lib/templates";
@@ -761,6 +761,24 @@ export default function StaffToFretboard({
     if (!visible) el.scrollTo({ left: target, behavior: "smooth" });
   }, [currentMeasureIndex, measures.length, staffH]);
   const [isPlaying, setIsPlaying] = useState(false);
+  // リピート再生(オンの間、最後まで来たら途切れずに頭から繰り返す)。選択は端末に保存する
+  const [repeatOn, setRepeatOn] = useState(false);
+  const repeatRef = useRef(false);
+  useEffect(() => {
+    repeatRef.current = repeatOn;
+  }, [repeatOn]);
+  useEffect(() => {
+    const load = () => {
+      try { if (localStorage.getItem("sb-repeat") === "1") setRepeatOn(true); } catch {}
+    };
+    load();
+  }, []);
+  const toggleRepeat = () => {
+    setRepeatOn((v) => {
+      try { localStorage.setItem("sb-repeat", v ? "0" : "1"); } catch {}
+      return !v;
+    });
+  };
   // ローカルなstartGridは小節をまたいで一意ではないため、どの小節の音符かも保持する。
   const [playingNoteKey, setPlayingNoteKey] = useState<{ measureIndex: number; startGrid: number } | null>(null);
   // 現在鳴っているharmony(コード)。noteのイベントが挟まっても途切れず、次のharmony
@@ -999,7 +1017,7 @@ export default function StaffToFretboard({
       await startPractice();
       return;
     }
-    await playScore(measures);
+    await playScore(measures, undefined, undefined, true);
   }
 
   // 12キー練習を中断/終了する。restoreなら、練習前の譜面・キーに戻す。
@@ -1039,7 +1057,8 @@ export default function StaffToFretboard({
     runStep(0);
   }
 
-  async function playScore(score: Measure[], onFinished?: () => void) {
+  // loopable: リピートがオンなら、最後まで来たら途切れずに頭から繰り返す(startAt: 前の周回の終わりの時刻)
+  async function playScore(score: Measure[], onFinished?: () => void, startAt?: number, loopable?: boolean) {
     const hasContent = score.some((m) => m.notes.length > 0 || m.harmonies.length > 0);
     if (!hasContent) return;
     // 通常はPlayボタンがsamplesReadyになるまで無効化されているため素通りするが、
@@ -1088,7 +1107,7 @@ export default function StaffToFretboard({
 
     setIsPlaying(true);
     // 再生開始時点で、最初のイベントが属する小節にただちに表示を合わせる。
-    setCurrentMeasureIndex(events[0].measureIndex);
+    if (startAt === undefined) setCurrentMeasureIndex(events[0].measureIndex);
 
     // 音は「AudioContextの時計」に先読みでスケジュールする(画面の再描画が重くても
     // 音のタイミングがぶれない)。画面の更新(ハイライト・小節追従)は、その音と
@@ -1096,7 +1115,7 @@ export default function StaffToFretboard({
     const actx = ensureAudioContext();
     const LEAD_SEC = 0.15;
     const LOOKAHEAD_SEC = 0.25;
-    const t0 = actx.currentTime + LEAD_SEC;
+    const t0 = startAt ?? actx.currentTime + LEAD_SEC;
     let nextIdx = 0;
     const fire = (ev: PlaybackEvent, at: number) => {
       const toneSec = (ev.endMs - ev.atMs) / 1000;
@@ -1145,13 +1164,22 @@ export default function StaffToFretboard({
     const pumpId = setInterval(pump, 25);
     timeoutIdsRef.current.push(pumpId as unknown as ReturnType<typeof setTimeout>);
 
+    // 1周の長さ(小節数ぶん)。リピート時は、次の周回をこの長さの分だけ後ろに、時刻を固定して予約する
+    const loopLenMs = Math.max(overallEndMs, score.length * measureDurationMs);
+    const endDelayMs = Math.max(0, (t0 + loopLenMs / 1000 - actx.currentTime) * 1000);
     const endTimeoutId = setTimeout(() => {
+      if (loopable && repeatRef.current) {
+        // 途切れないよう、終わる少し前に次の周回を同じ時計の上で予約する(isPlayingはtrueのまま)
+        clearInterval(pumpId);
+        void playScore(score, undefined, t0 + loopLenMs / 1000, true);
+        return;
+      }
       clearInterval(pumpId);
       setIsPlaying(false);
       setPlayingNoteKey(null);
       setPlayingHarmonyKey(null);
       onFinished?.();
-    }, overallEndMs + LEAD_SEC * 1000);
+    }, loopable ? Math.max(0, endDelayMs - 120) : overallEndMs + LEAD_SEC * 1000);
     timeoutIdsRef.current.push(endTimeoutId);
   }
 
@@ -2783,6 +2811,7 @@ export default function StaffToFretboard({
             disabled={!samplesReady && !isPlaying}
             onClick={handlePlayClick}
           />
+          <IconButton id="repeat-btn" label={tr("Repeat")} icon={<Repeat size={16} />} active={repeatOn} onClick={toggleRepeat} />
           <IconButton id="clear-btn" label={tr("Clear all")} icon={<Eraser size={16} />} onClick={handleClear} />
         </div>
         )}
@@ -3489,6 +3518,7 @@ export default function StaffToFretboard({
             disabled={!samplesReady && !isPlaying}
             onClick={handlePlayClick}
           />
+          <IconButton id="repeat-btn-mobile" label={tr("Repeat")} icon={<Repeat size={16} />} active={repeatOn} onClick={toggleRepeat} />
         </span>
         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
           {[

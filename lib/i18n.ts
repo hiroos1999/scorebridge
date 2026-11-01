@@ -138,6 +138,7 @@ export const JA: Record<string, string> = {
   "strings": "弦",
   "Bass note": "最低音",
   "Place or select a chord to see its Drop 2 voicings.": "コードを置くか選ぶと、そのコードのDrop 2ボイシングが出ます。",
+  "Repeat": "リピート再生",
   "Zoom frets (Focus)": "フレットを拡大(フォーカス)",
   "avg": "平均",
   "bars": "小節",
