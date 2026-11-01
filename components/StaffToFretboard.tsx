@@ -22,7 +22,8 @@ const NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭"
 const DEGREE_NAMES = ["Do", "Di", "Re", "Me", "Mi", "Fa", "Fi", "Sol", "Le", "La", "Te", "Ti"];
 // コード基準の度数表記(半音数 → 表記)。ルート=1、3度=3/♭3、5度=5/♭5、7度=7/♭7。
 const CHORD_DEGREE_NAMES = ["1", "♭9", "9", "♭3", "3", "11", "♭5", "5", "♭13", "13", "♭7", "7"];
-const CHORD_DEGREE_ROLE = ["danger", "gray", "pro", "warning", "warning", "accent", "success", "success", "gray", "pro", "success", "success"];
+// 色分け: 1=赤 / 3=橙 / 5=緑 / 7=青(3度と7度はジャズのガイドトーン) / 9・13=紫 / 11=金
+const CHORD_DEGREE_ROLE = ["danger", "gray", "pro", "warning", "warning", "accent", "success", "success", "gray", "pro", "info", "info"];
 const DEGREE_ROLE = [
   "danger",
   "gray",
@@ -35,7 +36,7 @@ const DEGREE_ROLE = [
   "gray",
   "pro",
   "gray",
-  "success",
+  "info",
 ];
 
 const STAFF_VB_H = 300;
@@ -203,6 +204,7 @@ function colorFor(role: string): [string, string] {
     success: ["var(--success)", "var(--on-success)"],
     pro: ["var(--pro)", "var(--on-pro)"],
     accent: ["var(--accent)", "var(--on-accent)"],
+    info: ["var(--info)", "var(--on-info)"],
     gray: ["var(--gray)", "var(--on-gray)"],
   };
   return map[role] || map.gray;
@@ -2516,6 +2518,7 @@ export default function StaffToFretboard({
           --danger: #ff453a; --on-danger:#ffffff;
           --warning: #ff9f0a; --on-warning:#1a1000;
           --success: #30d158; --on-success:#04170a;
+          --info: #0a84ff; --on-info:#ffffff;
           --pro: #bf5af2; --on-pro:#ffffff;
           --gray: #8e8e93; --on-gray:#000000;
           --accent: #e0b84f; --on-accent:#2a2108;
@@ -2531,6 +2534,7 @@ export default function StaffToFretboard({
           --danger: #d6412a; --on-danger:#fff2ec;
           --warning: #b5730c; --on-warning:#fff8ea;
           --success: #157a55; --on-success:#e9fbf3;
+          --info: #2a68c9; --on-info:#eef4ff;
           --pro: #5b52c9; --on-pro:#f1f0ff;
           --gray: #6c6455; --on-gray:#f5f0e0;
           --accent: #b8942f; --on-accent:#2a2721;
@@ -3760,7 +3764,8 @@ export default function StaffToFretboard({
               { label: "1 · root", role: "danger" },
               { label: "3, ♭3 · 3rd", role: "warning" },
               { label: "11 · 4th", role: "accent" },
-              { label: "♭5, 5, ♭7, 7", role: "success" },
+              { label: "♭5, 5", role: "success" },
+              { label: "♭7, 7", role: "info" },
               { label: "9, 6/13", role: "pro" },
               { label: tr("Other"), role: "gray" },
             ]
@@ -3768,7 +3773,8 @@ export default function StaffToFretboard({
               { label: tr("Do · root"), role: "danger" },
               { label: tr("Mi · 3rd"), role: "warning" },
               { label: tr("Fa · 4th"), role: "accent" },
-              { label: tr("Sol, Ti · 5th, 7th"), role: "success" },
+              { label: tr("Sol · 5th"), role: "success" },
+              { label: tr("Ti · 7th"), role: "info" },
               { label: tr("Re, La · 2nd, 6th"), role: "pro" },
               { label: tr("Chromatic"), role: "gray" },
             ]

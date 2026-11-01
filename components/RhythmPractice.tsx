@@ -792,7 +792,7 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
             {(() => {
               const ch = leftPlan ? { root: leftPlan.chordRoot, kind: leftPlan.chordKind } : chordsPerBar[0];
               const intervals = CHORD_TYPES[ch.kind] ?? CHORD_TYPES.maj7;
-              const role = (iv: number) => (iv === 0 ? "danger" : iv === 3 || iv === 4 ? "warning" : iv === 6 || iv === 7 || iv === 10 || iv === 11 ? "success" : "pro");
+              const role = (iv: number) => (iv === 0 ? "danger" : iv === 3 || iv === 4 ? "warning" : iv === 6 || iv === 7 ? "success" : iv === 10 || iv === 11 ? "info" : "pro");
               const dots: React.ReactNode[] = [];
               for (let s = 0; s < TARGET_STRINGS; s++) {
                 for (let f = rLo; f <= rHi; f++) {
@@ -845,7 +845,8 @@ export default function RhythmPractice({ measures, chordRoot, chordType, useFlat
           {[
             { label: tr("1 · root"), role: "danger" },
             { label: tr("3 · 3rd"), role: "warning" },
-            { label: tr("5, 7 · 5th, 7th"), role: "success" },
+            { label: tr("5 · 5th"), role: "success" },
+            { label: tr("7 · 7th"), role: "info" },
             { label: tr("6 · 6th"), role: "pro" },
           ].map((it) => (
             <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
