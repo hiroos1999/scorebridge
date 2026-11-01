@@ -21,6 +21,8 @@ const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", 
 const NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
 const DEGREE_NAMES = ["Do", "Di", "Re", "Me", "Mi", "Fa", "Fi", "Sol", "Le", "La", "Te", "Ti"];
 // コード基準の度数表記(半音数 → 表記)。ルート=1、3度=3/♭3、5度=5/♭5、7度=7/♭7。
+// キー(移動ド)のメジャースケールの7音(キー主音からの半音数)
+const KEY_SCALE_DEGREES = [0, 2, 4, 5, 7, 9, 11];
 const CHORD_DEGREE_NAMES = ["1", "♭9", "9", "♭3", "3", "11", "♭5", "5", "♭13", "13", "♭7", "7"];
 // 色分け: 1=赤 / 3=橙 / 5=緑 / 7=青(3度と7度はジャズのガイドトーン) / 9・13=紫 / 11=金
 const CHORD_DEGREE_ROLE = ["danger", "gray", "pro", "warning", "warning", "accent", "success", "success", "gray", "pro", "info", "info"];
@@ -689,6 +691,20 @@ export default function StaffToFretboard({
   const [labelMode, setLabelMode] = useState<"key" | "chord">("chord");
   const [shapeSel, setShapeSel] = useState<ShapeName | null>(null);
   // Drop 2ボイシング(CAGEDシェイプとは排他)。弦の組み合わせ(0〜2)と最低音(0=R,1=3,2=5,3=7)で絞り込む
+  // キーの7音(ドレミファソラシ)を指板に薄く表示するか(オプション。端末に保存)
+  const [keyGhostOn, setKeyGhostOn] = useState(false);
+  useEffect(() => {
+    const load = () => {
+      try { if (localStorage.getItem("sb-keyghost") === "1") setKeyGhostOn(true); } catch {}
+    };
+    load();
+  }, []);
+  const toggleKeyGhost = () => {
+    setKeyGhostOn((v) => {
+      try { localStorage.setItem("sb-keyghost", v ? "0" : "1"); } catch {}
+      return !v;
+    });
+  };
   const [dropOn, setDropOn] = useState(false);
   const [dropSet, setDropSet] = useState<number | null>(1);
   const [dropInv, setDropInv] = useState<number | null>(null);
@@ -1814,6 +1830,10 @@ export default function StaffToFretboard({
               <div className="sb-item">
                 <span>{tr("Drop 2 voicings")}</span>
                 <Switch on={dropOn} label={tr("Drop 2 voicings")} onClick={() => { if (!dropOn) { setShapesOn(false); setShapeSel(null); } setDropOn((v) => !v); }} />
+              </div>
+              <div className="sb-item">
+                <span>{tr("Faint key notes")}</span>
+                <Switch on={keyGhostOn} label={tr("Faint key notes")} onClick={toggleKeyGhost} />
               </div>
               </>
               )}
@@ -3698,7 +3718,22 @@ export default function StaffToFretboard({
                   // 同じポジションが実際のメロディ音符でもある場合は、通常濃度の
                   // メロディ表示を優先し、半透明のコードマーカーは重ねて描かない。
                   const isHarmonyTone = !isMelody && harmonyPitchClasses.has(pc);
-                  if (!isMelody && !isHarmonyTone) return null;
+                  if (!isMelody && !isHarmonyTone) {
+                    // キーの7音を、コードトーンの下に薄く出す(コードトーンと同じ位置には出さない)
+                    if (!keyGhostOn || !KEY_SCALE_DEGREES.includes(degreeFor(pc, root))) return null;
+                    if (focusShape && (f < focusLo || f > focusHi)) return null;
+                    const gx = fbLeft + f * fretW - fretW / 2;
+                    const gDeg = degreeFor(pc, labelMode === "chord" && displayedHarmony ? displayedHarmony.root : root);
+                    const gLabel = labelMode === "chord" && displayedHarmony ? CHORD_DEGREE_NAMES[gDeg] : DEGREE_NAMES[gDeg];
+                    return (
+                      <g key={f} pointerEvents="none" opacity={0.3}>
+                        <circle cx={gx} cy={y} r={10} fill="none" stroke="var(--text-secondary)" strokeWidth={1.5} />
+                        <text x={gx} y={y + 4} textAnchor="middle" fontSize={11} fontWeight={600} style={{ fill: "var(--text-secondary)" }}>
+                          {gLabel}
+                        </text>
+                      </g>
+                    );
+                  }
                   if (focusShape && (f < focusLo || f > focusHi)) return null;
                   const x = fbLeft + f * fretW - fretW / 2;
                   const useChordDeg = labelMode === "chord" && !!displayedHarmony;

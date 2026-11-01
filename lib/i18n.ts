@@ -143,6 +143,7 @@ export const JA: Record<string, string> = {
   "Ti · 7th": "シ · 7度",
   "5 · 5th": "5 · 5度",
   "7 · 7th": "7 · 7度",
+  "Faint key notes": "キーの音を薄く表示",
   "Zoom frets (Focus)": "フレットを拡大(フォーカス)",
   "avg": "平均",
   "bars": "小節",
