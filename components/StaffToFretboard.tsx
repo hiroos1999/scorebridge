@@ -11,6 +11,7 @@ import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/pat
 import { parseMusicXmlFile } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
 import { SHAPE_ORDER, shapeNotes, shapeQualityFor, type ShapeName } from "@/lib/caged";
+import { drop2Voicings, DROP2_SETS } from "@/lib/drop2";
 import IconButton from "@/components/IconButton";
 import RhythmPractice from "@/components/RhythmPractice";
 import { Switch, Stepper } from "@/components/IosControls";
@@ -685,6 +686,10 @@ export default function StaffToFretboard({
   const [focusW, setFocusW] = useState(5);
   const [labelMode, setLabelMode] = useState<"key" | "chord">("chord");
   const [shapeSel, setShapeSel] = useState<ShapeName | null>(null);
+  // Drop 2ボイシング(CAGEDシェイプとは排他)。弦の組み合わせ(0〜2)と最低音(0=R,1=3,2=5,3=7)で絞り込む
+  const [dropOn, setDropOn] = useState(false);
+  const [dropSet, setDropSet] = useState<number | null>(1);
+  const [dropInv, setDropInv] = useState<number | null>(null);
   // ONの間、新規配置する音符・休符を3連符にする（休符モードと同様のトグル）。
   const [tripletMode, setTripletMode] = useState(false);
   const [fullFeedback, setFullFeedback] = useState(false);
@@ -1711,7 +1716,7 @@ export default function StaffToFretboard({
   );
 
   // CAGEDシェイプ: 表示中のコードがmaj7/7/6/m7/m6/mMaj7のときだけ有効
-  const SHAPE_COLORS: Record<ShapeName, string> = { E: "#4b8be0", D: "#a07be0", C: "#e0574b", A: "#e0b84a", G: "#4bb38b" };
+  const SHAPE_COLORS: Record<string, string> = { E: "#4b8be0", D: "#a07be0", C: "#e0574b", A: "#e0b84a", G: "#4bb38b", "d2-0": "#e0574b", "d2-1": "#e0b84a", "d2-2": "#4b8be0", "d2-3": "#4bb38b" };
   const shapeQuality = displayedHarmony ? shapeQualityFor(displayedHarmony.kind) : null;
   const shapeList =
     shapesOn && displayedHarmony && shapeQuality
@@ -1732,7 +1737,15 @@ export default function StaffToFretboard({
     const up = shapeQuality && displayedHarmony ? shapeNotes(sh.name, displayedHarmony.root, shapeQuality, FRETS, 1) : null;
     return up && up.full ? [sh, { name: sh.name, ...up }] : [sh];
   });
-  const visibleShapes = shapeInstances.filter((sh) => shapeSel === null || sh.name === shapeSel);
+  const dropShapes =
+    dropOn && displayedHarmony
+      ? drop2Voicings(displayedHarmony.root, displayedHarmony.kind, FRETS)
+          .filter((v) => (dropSet === null || v.set === dropSet) && (dropInv === null || v.bass === dropInv))
+          .map((v) => ({ name: `d2-${v.bass}`, start: v.start, full: v.full, notes: v.notes }))
+      : [];
+  const visibleShapes: { name: string; start: number; full: boolean; notes: { s: number; f: number; role: string }[] }[] = dropOn
+    ? dropShapes
+    : shapeInstances.filter((sh) => shapeSel === null || sh.name === shapeSel);
   const shapeNoteKeys = new Set(visibleShapes.flatMap((sh) => sh.notes.map((n) => `${n.s}:${n.f}`)));
 
   const fretboardViewButton = (
@@ -1752,7 +1765,7 @@ export default function StaffToFretboard({
       <>{boardOpen && (
         <>
           <div className="sb-sheet-backdrop" style={{ bottom: sheetBottom }} onClick={() => setBoardOpen(false)} />
-          <div className="sb-sheet" role="dialog" aria-modal="true" aria-label={tr("Fretboard view")} style={{ bottom: sheetBottom }}>
+          <div className="sb-sheet" role="dialog" aria-modal="true" aria-label={tr("Fretboard view")} style={{ bottom: sheetBottom, maxHeight: `min(72vh, calc(100dvh - ${sheetBottom}px - 56px))` }}>
             <div className="sb-sheet-grabber" aria-hidden="true" />
             <div className="sb-sheet-head">
               <span style={{ width: 64 }} />
@@ -1763,10 +1776,16 @@ export default function StaffToFretboard({
             <div className="sb-group-title">{tr("Display")}</div>
             <div className="sb-group">
               {mode === "tones" && (
+              <>
               <div className="sb-item">
                 <span>{tr("CAGED shapes")}</span>
-                <Switch on={shapesOn} label={tr("CAGED shapes")} onClick={() => { setShapesOn((v) => !v); setShapeSel(null); }} />
+                <Switch on={shapesOn} label={tr("CAGED shapes")} onClick={() => { if (!shapesOn) setDropOn(false); setShapesOn((v) => !v); setShapeSel(null); }} />
               </div>
+              <div className="sb-item">
+                <span>{tr("Drop 2 voicings")}</span>
+                <Switch on={dropOn} label={tr("Drop 2 voicings")} onClick={() => { if (!dropOn) { setShapesOn(false); setShapeSel(null); } setDropOn((v) => !v); }} />
+              </div>
+              </>
               )}
               <div className="sb-item">
                 <span>{tr("Zoom frets (Focus)")}</span>
@@ -1825,6 +1844,48 @@ export default function StaffToFretboard({
               ))}
             </div>
 
+              </>
+            )}
+
+            {mode === "tones" && dropOn && (
+              <>
+                {(() => {
+                  const chip = (on: boolean, color?: string) => ({ borderColor: color ?? (on ? "var(--accent)" : "var(--border-strong)"), background: on ? (color ?? "var(--accent)") : "transparent", color: on ? "#1a1511" : "var(--text-primary)" });
+                  const jump = (set: number | null, inv: number | null) => {
+                    if (!focusOn || !displayedHarmony) return;
+                    const first = drop2Voicings(displayedHarmony.root, displayedHarmony.kind, FRETS)
+                      .filter((v) => (set === null || v.set === set) && (inv === null || v.bass === inv))
+                      .sort((a, b) => a.start - b.start)[0];
+                    if (first && (set !== null || inv !== null)) setFocusLoState(Math.max(0, first.start - 1));
+                  };
+                  return (
+                    <>
+                      <div className="sb-group-title">{tr("String set")}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <button type="button" aria-pressed={dropSet === null} className="sb-chip" style={chip(dropSet === null)} onClick={() => setDropSet(null)}>{tr("All")}</button>
+                        {DROP2_SETS.map((st, i) => (
+                          <button key={st.label} type="button" aria-pressed={dropSet === i} className="sb-chip" style={chip(dropSet === i)} onClick={() => { const n = dropSet === i ? null : i; setDropSet(n); jump(n, dropInv); }}>
+                            {st.label} {tr("strings")}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="sb-group-title">{tr("Bass note")}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <button type="button" aria-pressed={dropInv === null} className="sb-chip" style={chip(dropInv === null)} onClick={() => setDropInv(null)}>{tr("All")}</button>
+                        {["R", "3", "5", "7"].map((lb, i) => (
+                          <button key={lb} type="button" aria-pressed={dropInv === i} className="sb-chip" style={chip(dropInv === i, SHAPE_COLORS[`d2-${i}`])} onClick={() => { const n = dropInv === i ? null : i; setDropInv(n); jump(dropSet, n); }}>
+                            {lb}
+                          </button>
+                        ))}
+                      </div>
+                      {!displayedHarmony && (
+                        <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 8 }}>
+                          {tr("Place or select a chord to see its Drop 2 voicings.")}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </>
             )}
 
@@ -2552,7 +2613,7 @@ export default function StaffToFretboard({
           padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow: 0 -20px 50px rgba(0,0,0,0.6);
         }
         .sb-sheet-grabber { width: 36px; height: 5px; border-radius: 3px; background: rgba(235,235,245,0.3); margin: 0 auto 6px; }
-        .sb-sheet-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+        .sb-sheet-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; position: sticky; top: 0; z-index: 1; background: #1c1c1e; }
         .sb-sheet-title { font-size: 17px; font-weight: 600; }
         .sb-sheet-done { width: 64px; border: none; background: transparent; color: var(--accent); font-size: 17px; font-weight: 600; text-align: right; padding: 0; }
         .sb-sheet-done:hover { background: transparent; }
@@ -3432,6 +3493,7 @@ export default function StaffToFretboard({
         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
           {[
             shapesOn ? "CAGED" : null,
+            dropOn ? "Drop 2" : null,
             focusOn ? `${tr("Focus")} ${focusLo}–${focusHi}` : `${viewFrets} ${tr("frets")}`,
             labelMode === "key" ? tr("Do Re Mi") : "1 3 5 7",
           ].filter(Boolean).join(" · ")}
@@ -3445,7 +3507,7 @@ export default function StaffToFretboard({
           style={{ width: "100%", height: "auto", display: "block", minWidth: focusShape || narrowFretboard ? undefined : viewFrets === 17 ? "880px" : "660px" }}
         >
           <defs>
-            {(Object.keys(SHAPE_COLORS) as ShapeName[]).map((k) => (
+            {Object.keys(SHAPE_COLORS).map((k) => (
               <g key={k}>
                 <filter id={`shape-ring-${k}`} filterUnits="userSpaceOnUse" x="0" y="-14" width="1400" height="234" colorInterpolationFilters="sRGB">
                   <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="b" />
@@ -3556,7 +3618,7 @@ export default function StaffToFretboard({
                 : [];
             });
             return (
-              <g key={`shape-${sh.name}-${sh.start}`} pointerEvents="none">
+              <g key={`shape-${sh.name}-${sh.start}-${sh.notes[0]?.s}`} pointerEvents="none">
                 <g filter={`url(#shape-fill-${sh.name})`} opacity={0.16}>{circles}{links}</g>
                 <g filter={`url(#shape-ring-${sh.name})`}>{circles}{links}</g>
               </g>
