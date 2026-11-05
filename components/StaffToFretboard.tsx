@@ -2,13 +2,13 @@
 
 import { LANG_STORAGE_KEY, makeTr, type Lang } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Sparkles, Square, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Sparkles, ScanLine, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES, TEMPLATE_CATEGORY_LABELS, type TemplateCategory } from "@/lib/templates";
 import { PRACTICE_ORDERS, prefersFlats, transposeMeasures } from "@/lib/transpose";
 import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/patterns";
-import { parseMusicXmlFile } from "@/lib/musicxmlImport";
+import { parseMusicXmlFile, type MusicXmlImportResult } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
 import { SHAPE_ORDER, shapeNotes, shapeQualityFor, type ShapeName } from "@/lib/caged";
 import { drop2Voicings, DROP2_SETS } from "@/lib/drop2";
@@ -727,6 +727,8 @@ export default function StaffToFretboard({
   const [isImporting, setIsImporting] = useState(false);
   const [lastImportWarnings, setLastImportWarnings] = useState<{ fileName: string; warnings: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const omrInputRef = useRef<HTMLInputElement | null>(null);
+  const [omrError, setOmrError] = useState<{ message: string; detail: string } | null>(null);
   // 表示中の小節のnotes/harmoniesだけを操作する各種ハンドラから使う短縮参照。
   const notes = measures[currentMeasureIndex].notes;
   const harmonies = measures[currentMeasureIndex].harmonies;
@@ -1669,6 +1671,69 @@ export default function StaffToFretboard({
       loadInitialData(song);
     } catch (err) {
       window.alert(`MusicXMLのインポートに失敗しました: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  // 楽譜画像/PDF → /api/omr(Audiveris) → MusicXML → 既存のパーサーで取り込む。
+  async function handleOmrFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setOmrError(null);
+    setIsImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      let res: Response;
+      try {
+        res = await fetch("/api/omr", { method: "POST", body: fd });
+      } catch {
+        throw Object.assign(new Error("変換サーバーに接続できませんでした。"), { detail: "dev サーバーが起動しているか確認してください。" });
+      }
+      const json = (await res.json().catch(() => null)) as
+        | { files?: { name: string; data: string }[]; error?: string; detail?: string }
+        | null;
+      if (!res.ok || !json?.files?.length) {
+        throw Object.assign(new Error(json?.error ?? `変換に失敗しました（HTTP ${res.status}）`), { detail: json?.detail ?? "" });
+      }
+      // 複数ファイル（複数ムーブメント等）は小節を順に連結する。先頭ファイルの調・拍子を採用。
+      const parsed: MusicXmlImportResult[] = [];
+      for (const f of json.files) {
+        const bin = Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0));
+        parsed.push(await parseMusicXmlFile(bin.buffer));
+      }
+      const first = parsed[0];
+      if (!first) throw new Error("MusicXMLを読み取れませんでした。");
+      const merged: MusicXmlImportResult = {
+        ...first,
+        measures: parsed.flatMap((r) => r.measures),
+        warnings: parsed.flatMap((r) => r.warnings),
+      };
+
+      const defaultName = file.name.replace(/\.(jpe?g|png|pdf)$/i, "");
+      const name = window.prompt("インポートする曲名を入力してください", defaultName);
+      if (name === null) return;
+      const song: ImportedSong = {
+        id: crypto.randomUUID(),
+        name: name.trim() || defaultName,
+        fileName: file.name,
+        importedAt: Date.now(),
+        root: merged.root,
+        useFlats: merged.useFlats,
+        timeSig: merged.timeSig,
+        measures: merged.measures,
+        warnings: ["楽譜画像をOMR(Audiveris)で変換した結果です。音符・リズムの誤認識がないか確認してください。", ...merged.warnings],
+      };
+      await saveImportedSong(song);
+      setImportedSongs((prev) => [song, ...prev]);
+      setSelectedImportId(song.id);
+      setLastImportWarnings({ fileName: file.name, warnings: song.warnings });
+      loadInitialData(song);
+    } catch (err) {
+      const detail = (err as { detail?: string }).detail ?? "";
+      setOmrError({ message: err instanceof Error ? err.message : String(err), detail });
     } finally {
       setIsImporting(false);
     }
@@ -2821,6 +2886,20 @@ export default function StaffToFretboard({
             disabled={isImporting}
             onClick={() => fileInputRef.current?.click()}
           />
+          <input
+            ref={omrInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+            style={{ display: "none" }}
+            onChange={handleOmrFileSelected}
+          />
+          <IconButton
+            id="import-omr-btn"
+            label={isImporting ? tr("Importing…") : tr("Import sheet image / PDF")}
+            icon={<ScanLine size={16} />}
+            disabled={isImporting}
+            onClick={() => omrInputRef.current?.click()}
+          />
         </div>
 
         {mode === "tones" && (
@@ -3117,6 +3196,15 @@ export default function StaffToFretboard({
         )}
       </div>
 
+      {omrError && (
+        <div role="alert" id="omr-error" style={{ margin: "8px 12px", padding: "10px 12px", borderRadius: 10, background: "#fdecea", color: "#7a1c12", fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <strong>{omrError.message}</strong>
+            <button type="button" onClick={() => setOmrError(null)} aria-label="Close">×</button>
+          </div>
+          {omrError.detail && <pre style={{ whiteSpace: "pre-wrap", margin: "6px 0 0", maxHeight: 200, overflow: "auto", fontSize: 11 }}>{omrError.detail}</pre>}
+        </div>
+      )}
       {lastImportWarnings && (
         <div
           id="import-warnings"

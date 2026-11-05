@@ -57,6 +57,7 @@ export const JA: Record<string, string> = {
   "Guitar fretboard: glowing dots are the next note": "ギター指板。光っている点が次に弾く音",
   "Hide chords & pattern ▴": "コードとパターンを閉じる ▴",
   "Import MusicXML": "MusicXMLを取り込む",
+  "Import sheet image / PDF": "楽譜画像・PDFを取り込む",
   "Importing…": "取り込み中…",
   "Key": "キー",
   "Key & meter": "キーと拍子",
