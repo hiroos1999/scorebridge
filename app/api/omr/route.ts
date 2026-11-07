@@ -11,10 +11,28 @@ export const maxDuration = 300;
 const DEFAULT_CMD = "/Applications/Audiveris.app/Contents/MacOS/Audiveris";
 const MAX_BYTES = 50 * 1024 * 1024;
 const TIMEOUT_MS = 280_000;
+// Audiveris は 2,000万画素超の画像を拒否する（"Too large image"）。余裕を見て1,800万画素以下に縮小する。
+const MAX_PIXELS = 18_000_000;
 const ALLOWED = new Set([".jpg", ".jpeg", ".png", ".pdf"]);
 
 function fail(status: number, error: string, detail?: string) {
   return Response.json({ error, detail: detail ?? "" }, { status });
+}
+
+// macOS標準の sips で大きい画像を縮小する（JPEG/PNGのみ。sipsが無い環境では何もしない）。
+async function shrinkIfTooLarge(imgPath: string): Promise<string> {
+  try {
+    const info = await run("/usr/bin/sips", ["-g", "pixelWidth", "-g", "pixelHeight", imgPath]);
+    const w = Number(/pixelWidth:\s*(\d+)/.exec(info.log)?.[1]);
+    const h = Number(/pixelHeight:\s*(\d+)/.exec(info.log)?.[1]);
+    if (!w || !h || w * h <= MAX_PIXELS) return "";
+    const scale = Math.sqrt(MAX_PIXELS / (w * h));
+    const longSide = Math.floor(Math.max(w, h) * scale);
+    const r = await run("/usr/bin/sips", ["-Z", String(longSide), imgPath]);
+    return r.code === 0 ? `画像を ${w}x${h} から縮小しました（長辺 ${longSide}px）。\n` : "";
+  } catch {
+    return "";
+  }
 }
 
 async function walk(dir: string): Promise<string[]> {
@@ -72,6 +90,9 @@ export async function POST(request: Request) {
     const outDir = path.join(dir, "out");
     await writeFile(inPath, Buffer.from(await file.arrayBuffer()));
 
+    let note = "";
+    if (ext !== ".pdf") note = await shrinkIfTooLarge(inPath);
+
     let result;
     try {
       result = await run(cmd, ["-batch", "-export", "-output", outDir, "--", inPath]);
@@ -97,7 +118,7 @@ export async function POST(request: Request) {
     const payload = await Promise.all(
       files.map(async (p) => ({ name: path.basename(p), data: (await readFile(p)).toString("base64") })),
     );
-    return Response.json({ files: payload, log: result.log });
+    return Response.json({ files: payload, log: note + result.log });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
