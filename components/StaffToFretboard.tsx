@@ -8,6 +8,7 @@ import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES, TEMPLATE_CATEGORY_LABELS, type TemplateCategory } from "@/lib/templates";
 import { PRACTICE_ORDERS, prefersFlats, transposeMeasures } from "@/lib/transpose";
 import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/patterns";
+import { preprocessScoreImage } from "@/lib/imagePreprocess";
 import { parseMusicXmlFile, type MusicXmlImportResult } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
 import { SHAPE_ORDER, shapeNotes, shapeQualityFor, type ShapeName } from "@/lib/caged";
@@ -1684,8 +1685,9 @@ export default function StaffToFretboard({
     setOmrError(null);
     setIsImporting(true);
     try {
+      const prepared = await preprocessScoreImage(file);
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", prepared.file);
       let res: Response;
       try {
         res = await fetch("/api/omr", { method: "POST", body: fd });
@@ -2889,7 +2891,7 @@ export default function StaffToFretboard({
           <input
             ref={omrInputRef}
             type="file"
-            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+            accept="image/*,.pdf,application/pdf"
             style={{ display: "none" }}
             onChange={handleOmrFileSelected}
           />
