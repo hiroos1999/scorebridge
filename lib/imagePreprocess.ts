@@ -2,6 +2,10 @@
 // 向き補正 → 長辺4000px以下に縮小 → グレースケール → コントラスト自動補正 → JPEG化。
 // 失敗した場合は元のファイルをそのまま返す。
 const MAX_LONG_SIDE = 4000;
+// 解像度が低い画像（五線の間隔が10px前後になる）はAudiverisが無効扱いにするため、長辺3200px程度まで拡大する（最大3倍）。
+const MIN_LONG_SIDE = 2800;
+const UPSCALE_TARGET = 3200;
+const MAX_UPSCALE = 3;
 
 export type PreprocessResult = { file: File; note: string };
 
@@ -11,7 +15,9 @@ export async function preprocessScoreImage(file: File): Promise<PreprocessResult
   }
   try {
     const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const scale = Math.min(1, MAX_LONG_SIDE / Math.max(bmp.width, bmp.height));
+    const longSide = Math.max(bmp.width, bmp.height);
+    const scale =
+      longSide < MIN_LONG_SIDE ? Math.min(MAX_UPSCALE, UPSCALE_TARGET / longSide) : Math.min(1, MAX_LONG_SIDE / longSide);
     const w = Math.round(bmp.width * scale);
     const h = Math.round(bmp.height * scale);
     const canvas = document.createElement("canvas");
@@ -19,7 +25,10 @@ export async function preprocessScoreImage(file: File): Promise<PreprocessResult
     canvas.height = h;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return { file, note: "" };
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bmp, 0, 0, w, h);
+    const bmp0 = { w: bmp.width, h: bmp.height };
     bmp.close();
 
     const img = ctx.getImageData(0, 0, w, h);
@@ -49,7 +58,7 @@ export async function preprocessScoreImage(file: File): Promise<PreprocessResult
     const name = file.name.replace(/\.[^.]+$/, "") + ".jpg";
     return {
       file: new File([blob], name, { type: "image/jpeg" }),
-      note: `写真を補正しました（${w}x${h}、グレースケール＋コントラスト調整）。`,
+      note: `写真を補正しました（${bmp0.w}x${bmp0.h} → ${w}x${h}、グレースケール＋コントラスト調整）。`,
     };
   } catch {
     return { file, note: "" };
