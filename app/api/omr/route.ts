@@ -48,14 +48,23 @@ async function walk(dir: string): Promise<string[]> {
 function run(cmd: string, args: string[]): Promise<{ code: number | null; log: string; timedOut: boolean }> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let log = "";
+    let head = "";
+    let tail = "";
     let timedOut = false;
-    const cap = (d: Buffer) => { log = (log + d.toString()).slice(-8000); };
+    const cap = (d: Buffer) => {
+      const t = d.toString();
+      if (head.length < 3000) head += t;
+      tail = (tail + t).slice(-5000);
+    };
     child.stdout.on("data", cap);
     child.stderr.on("data", cap);
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, TIMEOUT_MS);
     child.on("error", (e) => { clearTimeout(timer); reject(e); });
-    child.on("close", (code) => { clearTimeout(timer); resolve({ code, log, timedOut }); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const log = head.length >= 3000 && tail.length >= 5000 ? `${head.slice(0, 3000)}\n…（中略）…\n${tail}` : head.length < 3000 ? head : tail;
+      resolve({ code, log, timedOut });
+    });
   });
 }
 
@@ -95,7 +104,10 @@ export async function POST(request: Request) {
 
     let result;
     try {
-      result = await run(cmd, ["-batch", "-export", "-output", outDir, "--", inPath]);
+      // 画像は1枚=1シート。iPhone写真などに含まれる副画像を別シートとして数えて失敗するのを避けるため、
+      // 画像では1枚目だけを処理する（PDFは全ページ）。
+      const sheetArgs = ext === ".pdf" ? [] : ["-sheets", "1"];
+      result = await run(cmd, ["-batch", "-export", ...sheetArgs, "-output", outDir, "--", inPath]);
     } catch (e) {
       return fail(500, "Audiveris を起動できませんでした。", e instanceof Error ? e.message : String(e));
     }
@@ -111,7 +123,7 @@ export async function POST(request: Request) {
       return fail(
         422,
         result.code === 0 ? "楽譜を認識できませんでした（MusicXMLが出力されませんでした）。" : `Audiveris が失敗しました（終了コード ${result.code}）。`,
-        result.log,
+        note + result.log,
       );
     }
     files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
