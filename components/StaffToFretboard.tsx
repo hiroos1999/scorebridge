@@ -18,6 +18,7 @@ import IconButton from "@/components/IconButton";
 import RhythmPractice from "@/components/RhythmPractice";
 import { Switch, Stepper } from "@/components/IosControls";
 import { ChordIcon, FlatIcon, RestIcon, SharpIcon, TripletIcon } from "@/components/MusicIcons";
+import { newId } from "@/lib/uuid";
 
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"];
@@ -1669,7 +1670,7 @@ export default function StaffToFretboard({
       if (name === null) return; // キャンセル
 
       const song: ImportedSong = {
-        id: crypto.randomUUID(),
+        id: newId(),
         name: name.trim() || defaultName,
         fileName: file.name,
         importedAt: Date.now(),
@@ -1732,7 +1733,7 @@ export default function StaffToFretboard({
       const name = window.prompt("インポートする曲名を入力してください", defaultName);
       if (name === null) return;
       const song: ImportedSong = {
-        id: crypto.randomUUID(),
+        id: newId(),
         name: name.trim() || defaultName,
         fileName: file.name,
         importedAt: Date.now(),
