@@ -26,11 +26,11 @@ RUN set -eux; \
     echo "Audiveris package: $url"; \
     test -n "$url" -a "$url" != "null"; \
     curl -fsSL -o /tmp/audiveris.deb "$url"; \
-    for c in xdg-desktop-menu xdg-mime xdg-icon-resource xdg-desktop-icon; do \
-      printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/$c; chmod +x /usr/local/bin/$c; \
-    done; \
-    apt-get update; apt-get install -y /tmp/audiveris.deb; \
-    rm -f /usr/local/bin/xdg-desktop-menu /usr/local/bin/xdg-mime /usr/local/bin/xdg-icon-resource /usr/local/bin/xdg-desktop-icon; \
+    apt-get update; \
+    deps="$(dpkg-deb -f /tmp/audiveris.deb Depends | awk -F',' '{for(i=1;i<=NF;i++){s=$i; sub(/\|.*/,"",s); gsub(/\(.*\)/,"",s); gsub(/[ \t]/,"",s); if(s!="")printf "%s ",s}}')"; \
+    echo "Audiveris deps: $deps"; \
+    apt-get install -y --no-install-recommends $deps; \
+    dpkg-deb -x /tmp/audiveris.deb /; \
     rm -rf /tmp/audiveris.deb /var/lib/apt/lists/*; \
     ls -l /opt/audiveris/bin/Audiveris
 
