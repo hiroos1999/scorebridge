@@ -1,7 +1,7 @@
 "use client";
 
 import { LANG_STORAGE_KEY, makeTr, type Lang } from "@/lib/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Sparkles, ScanLine, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
@@ -730,6 +730,15 @@ export default function StaffToFretboard({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const omrInputRef = useRef<HTMLInputElement | null>(null);
   const [omrError, setOmrError] = useState<{ message: string; detail: string } | null>(null);
+  // 楽譜画像取り込み(Audiveris)は自分のMac上でのみ動く。公開サイトでは出さない。
+  const omrAvailable = useSyncExternalStore(
+    () => () => {},
+    () => {
+      const h = window.location.hostname;
+      return h === "localhost" || h === "127.0.0.1" || h.endsWith(".local") || /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+    },
+    () => false
+  );
   // 表示中の小節のnotes/harmoniesだけを操作する各種ハンドラから使う短縮参照。
   const notes = measures[currentMeasureIndex].notes;
   const harmonies = measures[currentMeasureIndex].harmonies;
@@ -2895,13 +2904,15 @@ export default function StaffToFretboard({
             style={{ display: "none" }}
             onChange={handleOmrFileSelected}
           />
-          <IconButton
-            id="import-omr-btn"
-            label={isImporting ? tr("Importing…") : tr("Import sheet image / PDF")}
-            icon={<ScanLine size={16} />}
-            disabled={isImporting}
-            onClick={() => omrInputRef.current?.click()}
-          />
+          {omrAvailable && (
+            <IconButton
+              id="import-omr-btn"
+              label={isImporting ? tr("Importing…") : tr("Import sheet image / PDF")}
+              icon={<ScanLine size={16} />}
+              disabled={isImporting}
+              onClick={() => omrInputRef.current?.click()}
+            />
+          )}
         </div>
 
         {mode === "tones" && (
