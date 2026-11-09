@@ -525,6 +525,22 @@ function twoChoruses(chorus1: Measure[]): Measure[] {
 function jazzBluesF(): Measure[] {
   return twoChoruses(guideToneChorus(JAZZ_BLUES_F_BARS));
 }
+// The Chicken（Pee Wee Ellis）Bbのファンク・ブルース系12小節。Bb7×4 → Eb7×2 → D7 → G7 → C7×4。
+// 進行は複数のレッスン・解説で共通していた骨格（Eb9/D9/C9は便宜上7thコードとして扱う）。
+// 3度・7度のガイドトーンを2分音符で。2コーラス目は1オクターブ上。
+const CH_BB7: BluesChord = [PC.Bb, "7", "D", "Ab"];
+const CH_EB7: BluesChord = [PC.Eb, "7", "G", "Db"];
+const CH_D7: BluesChord = [PC.D, "7", "F#", "C"];
+const CH_G7: BluesChord = [PC.G, "7", "B", "F"];
+const CH_C7: BluesChord = [PC.C, "7", "E", "Bb"];
+const CHICKEN_BARS: [BluesChord, BluesChord][] = [
+  [CH_BB7, CH_BB7], [CH_BB7, CH_BB7], [CH_BB7, CH_BB7], [CH_BB7, CH_BB7],
+  [CH_EB7, CH_EB7], [CH_EB7, CH_EB7], [CH_D7, CH_D7], [CH_G7, CH_G7],
+  [CH_C7, CH_C7], [CH_C7, CH_C7], [CH_C7, CH_C7], [CH_C7, CH_C7],
+];
+function chickenBb(): Measure[] {
+  return twoChoruses(guideToneChorus(CHICKEN_BARS, 58, 72)); // 2コーラス目(1オクターブ上)が五線に収まるよう上限はC5
+}
 // 枯葉（Gm）32小節 AABC。3度・7度のガイドトーン（C=Gmは便宜上Gm7）。2コーラス目は1オクターブ上。
 const AL_CM7: BluesChord = [PC.C, "m7", "Eb", "Bb"];
 const AL_F7: BluesChord = [PC.F, "7", "A", "Eb"];
@@ -1067,6 +1083,15 @@ export const TEMPLATES: Template[] = [
     useFlats: true,
     timeSig: FOUR_FOUR,
     measures: jazzBluesF(),
+  },
+  {
+    id: "chicken-bb",
+    category: "practice",
+    label: "The Chicken (Pee Wee Ellis) in Bb — guide-tone melody (3rd / 7th, 2 choruses)",
+    root: PC.Bb,
+    useFlats: true,
+    timeSig: FOUR_FOUR,
+    measures: chickenBb(),
   },
   {
     id: "bebop-251-c",
