@@ -34,6 +34,13 @@ RUN set -eux; \
     rm -rf /tmp/audiveris.deb /var/lib/apt/lists/*; \
     ls -l /opt/audiveris/bin/Audiveris
 
+# Audiveris は起動時に GTK3 を読み込むため必要（ヘッドレスでも要求される）。
+RUN apt-get update && apt-get install -y --no-install-recommends libgtk-3-0t64 \
+    && rm -rf /var/lib/apt/lists/*; \
+    out="$(/opt/audiveris/bin/Audiveris -help 2>&1 || true)"; \
+    echo "$out" | head -15; \
+    ! echo "$out" | grep -q UnsatisfiedLinkError
+
 # OCR言語データ（コード記号・文字の認識用）。Audiveris は Tesseract のレガシーモデルが必要。
 ENV TESSDATA_PREFIX=/opt/tessdata
 RUN mkdir -p /opt/tessdata && \
