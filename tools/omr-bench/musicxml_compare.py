@@ -51,6 +51,7 @@ def parse(path):
     root = _read(path)
     part = next(c for c in root if _local(c.tag) == "part")
     divisions = 1
+    clef_oc = 0  # 8付き音部記号の補正（記譜どおりの高さに揃える）
     measures, chords = [], []
     for m in (c for c in part if _local(c.tag) == "measure"):
         notes, hs = [], []
@@ -60,6 +61,11 @@ def parse(path):
                 d = _text(el, "divisions")
                 if d:
                     divisions = max(1, int(float(d)))
+                for clef in (c for c in el if _local(c.tag) == "clef"):
+                    if clef.get("number") not in (None, "1"):
+                        continue
+                    oc = _text(clef, "clef-octave-change")
+                    clef_oc = int(float(oc)) if oc else 0
             elif t == "note":
                 if _child(el, "chord") is not None:
                     continue  # 和音の2音目以降は無視（旋律のみ比較）
@@ -73,7 +79,7 @@ def parse(path):
                 else:
                     step, octv = _text(p, "step"), _text(p, "octave")
                     alter = _text(p, "alter") or "0"
-                    midi = 12 * (int(octv) + 1) + STEP[step] + int(float(alter))
+                    midi = 12 * (int(octv) - clef_oc + 1) + STEP[step] + int(float(alter))
                     notes.append((midi, round(dur, 3)))
             elif t == "harmony":
                 r = _child(el, "root")

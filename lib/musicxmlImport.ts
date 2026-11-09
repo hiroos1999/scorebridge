@@ -238,6 +238,10 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
   if (!part) throw new Error("<part>要素が見つかりません（想定外のMusicXML構造）");
 
   let divisions = 1;
+  // 8付き音部記号（ギター譜のト音記号8vb等）: MusicXMLの<pitch>は実音（記譜より1オクターブ低い等）。
+  // アプリは記譜どおりの高さで扱うため、clef-octave-change分を打ち消す。
+  let clefOctaveChange = 0;
+  let clefShiftWarned = false;
   let fifths: number | null = null;
   let timeBeats: number | null = null;
   let timeBeatType: number | null = null;
@@ -252,6 +256,12 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
     for (const attrs of directChildren(measureEl, "attributes")) {
       const divEl = directChild(attrs, "divisions");
       if (divEl) divisions = Number(textOf(divEl));
+      for (const clefEl of directChildren(attrs, "clef")) {
+        const num = clefEl.getAttribute("number");
+        if (num !== null && num !== "1") continue; // 第1譜表の音部記号のみ
+        const ocEl = directChild(clefEl, "clef-octave-change");
+        clefOctaveChange = ocEl ? Math.trunc(Number(textOf(ocEl)) || 0) : 0;
+      }
       const fifthsEl = path(attrs, "key", "fifths");
       if (fifthsEl && fifths === null) fifths = Number(textOf(fifthsEl));
       const beatsEl = path(attrs, "time", "beats");
@@ -370,7 +380,15 @@ function parseScoreDocument(doc: Document, gridsPerQuarter = 4): MusicXmlImportR
           continue;
         }
         const step = requireText(directChild(pitchEl, "step"), `小節${mIdx + 1}: pitchのstep`);
-        const octave = Number(requireText(directChild(pitchEl, "octave"), `小節${mIdx + 1}: pitchのoctave`));
+        const octave =
+          Number(requireText(directChild(pitchEl, "octave"), `小節${mIdx + 1}: pitchのoctave`)) - clefOctaveChange;
+        if (clefOctaveChange !== 0 && !clefShiftWarned) {
+          clefShiftWarned = true;
+          warnings.push(
+            `8付き音部記号（clef-octave-change=${clefOctaveChange}）を検出したため、音を${-clefOctaveChange > 0 ? "上" : "下"}に` +
+              `${Math.abs(clefOctaveChange)}オクターブずらして記譜どおりの高さで取り込みました`
+          );
+        }
         const alterEl = directChild(pitchEl, "alter");
         const accidental = alterEl ? Math.trunc(Number(textOf(alterEl))) : 0;
 

@@ -47,3 +47,4 @@ next-env.d.ts
 # locally downloaded media used for manual testing; never meant to be committed
 *.mp4
 tools/omr-bench/results/
+__pycache__/
