@@ -26,7 +26,11 @@ RUN set -eux; \
     echo "Audiveris package: $url"; \
     test -n "$url" -a "$url" != "null"; \
     curl -fsSL -o /tmp/audiveris.deb "$url"; \
+    for c in xdg-desktop-menu xdg-mime xdg-icon-resource xdg-desktop-icon; do \
+      printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/$c; chmod +x /usr/local/bin/$c; \
+    done; \
     apt-get update; apt-get install -y /tmp/audiveris.deb; \
+    rm -f /usr/local/bin/xdg-desktop-menu /usr/local/bin/xdg-mime /usr/local/bin/xdg-icon-resource /usr/local/bin/xdg-desktop-icon; \
     rm -rf /tmp/audiveris.deb /var/lib/apt/lists/*; \
     ls -l /opt/audiveris/bin/Audiveris
 
