@@ -2,12 +2,13 @@
 
 import { LANG_STORAGE_KEY, makeTr, type Lang } from "@/lib/i18n";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Sparkles, ScanLine, Square, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Sparkles, ClipboardPaste, ScanLine, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES, TEMPLATE_CATEGORY_LABELS, type TemplateCategory } from "@/lib/templates";
 import { PRACTICE_ORDERS, prefersFlats, transposeMeasures } from "@/lib/transpose";
 import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/patterns";
+import { parseChordProgression } from "@/lib/chordText";
 import { preprocessScoreImage } from "@/lib/imagePreprocess";
 import { parseMusicXmlFile, type MusicXmlImportResult } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
@@ -729,6 +730,10 @@ export default function StaffToFretboard({
   const [lastImportWarnings, setLastImportWarnings] = useState<{ fileName: string; warnings: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const omrInputRef = useRef<HTMLInputElement | null>(null);
+  const [chordTextOpen, setChordTextOpen] = useState(false);
+  const [chordText, setChordText] = useState("");
+  const [chordTextStart, setChordTextStart] = useState(1);
+  const [chordTextMsg, setChordTextMsg] = useState<string[]>([]);
   const [omrError, setOmrError] = useState<{ message: string; detail: string } | null>(null);
   // 楽譜画像取り込み(Audiveris)は自分のMac上でのみ動く。公開サイトでは出さない。
   const omrAvailable = useSyncExternalStore(
@@ -1748,6 +1753,34 @@ export default function StaffToFretboard({
     } finally {
       setIsImporting(false);
     }
+  }
+
+  // 「| Gm7 C7 | Cm7 |」形式のテキストからコード進行を読み込み、指定小節から並べる。
+  // notes(メロディ)には一切触れず、対象小節のharmoniesだけを置き換える。
+  function handleApplyChordText() {
+    const { bars, warnings } = parseChordProgression(
+      chordText,
+      timeSig.numerator,
+      gridsPerBeat,
+      (pc) => names[pc],
+      (k) => CHORD_TYPE_LABELS[k] ?? k
+    );
+    if (bars.length === 0) {
+      setChordTextMsg(["コードが見つかりませんでした。「| Gm7 C7 | Cm7 |」のように、小節を | で区切って入力してください。"]);
+      return;
+    }
+    const start = Math.max(0, Math.floor(chordTextStart) - 1);
+    setMeasures((prev) => {
+      const next = prev.map((m) => ({ ...m }));
+      while (next.length < start + bars.length) next.push({ notes: [], harmonies: [] });
+      bars.forEach((hs, i) => {
+        next[start + i] = { ...next[start + i], harmonies: hs };
+      });
+      return next;
+    });
+    setCurrentMeasureIndex(start);
+    setChordTargetGrid(0);
+    setChordTextMsg([`${bars.length}小節分のコードを、小節${start + 1}から入れました。`, ...warnings]);
   }
 
   // 末尾に空の小節を1つ追加し、追加した小節に表示を移動する。
@@ -3029,6 +3062,45 @@ export default function StaffToFretboard({
           </button>
         </div>
         )}
+        {mode === "tones" && editOpen && chordTextOpen && (
+          <div id="chord-text-panel" style={{ margin: "8px 12px", padding: 12, borderRadius: 12, background: "rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              {tr("Paste chords, separating bars with |")}（例: | Gm7 C7 | Cm7 C7 | F Gm7 G#dim7 Am7 |）
+            </div>
+            <textarea
+              id="chord-text-input"
+              value={chordText}
+              onChange={(e) => setChordText(e.target.value)}
+              rows={5}
+              spellCheck={false}
+              placeholder="| Gm7 C7 | Cm7 C7 | F Gm7 G#dim7 Am7 |"
+              style={{ width: "100%", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 14, padding: 8, borderRadius: 8 }}
+            />
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+              <label style={{ fontSize: 13 }}>
+                {tr("Start at bar")}{" "}
+                <input
+                  id="chord-text-start"
+                  type="number"
+                  min={1}
+                  value={chordTextStart}
+                  onChange={(e) => setChordTextStart(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  style={{ width: 64 }}
+                />
+              </label>
+              <button id="chord-text-apply" type="button" onClick={handleApplyChordText}>
+                {tr("Apply chords")}
+              </button>
+            </div>
+            {chordTextMsg.length > 0 && (
+              <ul id="chord-text-msg" style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12 }}>
+                {chordTextMsg.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         {mode === "tones" && editOpen && (
           <div className="sb-row sb-edit">
         <div className="toolbar-group" data-cap={tr("Entry & measures")}>
@@ -3088,6 +3160,13 @@ export default function StaffToFretboard({
             ))}
           </select>
           <IconButton id="chord-place-btn" label={tr("Place chord")} text="Place chord" variant="outline" icon={<ChordIcon />} onClick={handlePlaceChord} />
+          <IconButton
+            id="chord-text-btn"
+            label={tr("Paste chord progression")}
+            icon={<ClipboardPaste size={16} />}
+            active={chordTextOpen}
+            onClick={() => setChordTextOpen((v) => !v)}
+          />
         </div>
 
         <div className="toolbar-group" data-cap={tr("Pattern (chord tones)")}>
