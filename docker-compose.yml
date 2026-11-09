@@ -1,0 +1,12 @@
+# NAS(Container Manager)用。家の中 or VPN経由で http://<NASのIP>:3002 を開く。
+# ルーターのポート開放はしないこと（外に公開しない。VPN経由で使う）。
+services:
+  scorebridge:
+    build: .
+    container_name: scorebridge
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    mem_limit: 1700m
+    volumes:
+      - ./data:/data
