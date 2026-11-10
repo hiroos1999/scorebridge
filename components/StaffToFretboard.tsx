@@ -2738,6 +2738,9 @@ export default function StaffToFretboard({
         .sb-summary { display:flex; flex-basis:100%; align-items:center; gap:14px; flex-wrap:wrap; font-size:13px; color: var(--text-secondary); padding:0 2px; }
         .sb-summary button { margin-left:auto; background: transparent; border-color: rgba(217,182,90,0.55); color: var(--accent); border-radius:999px; padding:0 14px; font-weight:600; }
         .sb-mobile-only { display: none; }
+        /* 指板SVGは幅100%で拡大されるので、タブレット/スマホでは高さに上限を付けて中央に収める */
+        @media (max-width: 1100px) { #fretboard { max-height: min(300px, 38vh); } }
+        @media (max-width: 640px) { #fretboard { max-height: min(190px, 26vh); } }
         @media (max-width: 640px) {
           .sb-header .sb-sub { display: none; }
           .sb-header { margin-bottom: 8px; }
