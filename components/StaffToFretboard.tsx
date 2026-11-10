@@ -782,6 +782,23 @@ export default function StaffToFretboard({
     };
     load();
   }, []);
+  // スマホ(縦)では譜面と指板を同時に出せないので、どちらか一方に集中して見る。選択は端末に保存する
+  const [phoneFocus, setPhoneFocus] = useState<"staff" | "board">("staff");
+  useEffect(() => {
+    const load = () => {
+      try {
+        if (localStorage.getItem("sb-phone-focus") === "board") setPhoneFocus("board");
+      } catch {}
+    };
+    load();
+  }, []);
+  const focusSegRef = useRef<HTMLDivElement>(null);
+  const choosePhoneFocus = (v: "staff" | "board") => {
+    setPhoneFocus(v);
+    // 切り替えた直後は、上の操作欄を画面の外に送り、譜面(または指板)が画面いっぱいに出るようにする
+    requestAnimationFrame(() => focusSegRef.current?.scrollIntoView({ block: "start" }));
+    try { localStorage.setItem("sb-phone-focus", v); } catch {}
+  };
   const staffH = narrowFretboard ? PHONE_STAFF_HEIGHTS[phoneStaffSize] : STAFF_RENDER_HEIGHT_PX;
   // 五線譜の表示領域の幅。画面が広いときは、表示中の小節の右側に後続の小節も並べて表示する。
   const staffWrapRef = useRef<HTMLDivElement>(null);
@@ -2761,6 +2778,15 @@ export default function StaffToFretboard({
             border-radius: 14px 14px 0 0;
           }
           .sb-hide-phone { display: none !important; }
+          .sb-focus-seg { flex: 1 1 100%; width: 100%; box-sizing: border-box; gap: 8px; margin: 0 0 8px; align-items: center; }
+          .sb-focus-seg .sb-seg-pair { display: flex; flex: 1; padding: 3px; border-radius: 14px; background: var(--surface-1); }
+          .sb-focus-seg .sb-seg-pair button { flex: 1; height: 38px; border-radius: 11px; font-weight: 700; border: none; background: transparent; color: var(--text-primary); }
+          .sb-focus-seg .sb-seg-pair button.sb-seg-on { background: var(--accent); color: var(--on-accent); }
+          .sb-focus-seg { position: sticky; top: 0; z-index: 25; background: var(--surface-0, #000); padding: 6px 0; }
+          .sb-paper[data-pfocus="board"] { display: none; }
+          .sb-board-tones[data-pfocus="staff"] #fretboard-wrap { display: none; }
+          .sb-board-tones[data-pfocus="board"] { position: static; margin: 0; border-radius: 14px; padding-bottom: 10px; }
+          .sb-board-tones[data-pfocus="board"] #fretboard { max-height: min(320px, 42vh); }
           .sb-seg button { padding: 0 10px; }
           .sb-mode-seg, .sb-key-group { flex: 1 1 100%; width: 100%; box-sizing: border-box; }
           .sb-mode-seg { padding: 4px; border-radius: 16px; background: var(--surface-1); }
@@ -3346,7 +3372,44 @@ export default function StaffToFretboard({
       )}
       {mode === "tones" && (
       <>
-      <section className="sb-paper">
+      <div ref={focusSegRef} className="sb-mobile-only sb-focus-seg" role="group" aria-label={tr("Focus view")}>
+        <div className="sb-seg-pair">
+          <button type="button" className={phoneFocus === "staff" ? "sb-seg-on" : ""} aria-pressed={phoneFocus === "staff"} onClick={() => choosePhoneFocus("staff")}>{tr("Staff")}</button>
+          <button type="button" className={phoneFocus === "board" ? "sb-seg-on" : ""} aria-pressed={phoneFocus === "board"} onClick={() => choosePhoneFocus("board")}>{tr("Fretboard")}</button>
+        </div>
+        {phoneFocus === "board" && (
+          <>
+            <IconButton
+              id="focus-prev-btn"
+              label={tr("Previous measure")}
+              icon={<ChevronLeft size={18} />}
+              disabled={currentMeasureIndex === 0}
+              onClick={() => {
+                setCurrentMeasureIndex((i) => Math.max(0, i - 1));
+                setSelectedNoteKey(null);
+                setSelectedRowIdx(null);
+                setChordTargetGrid(0);
+              }}
+            />
+            <span style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+              {currentMeasureIndex + 1} / {measures.length}
+            </span>
+            <IconButton
+              id="focus-next-btn"
+              label={tr("Next measure")}
+              icon={<ChevronRight size={18} />}
+              disabled={currentMeasureIndex === measures.length - 1}
+              onClick={() => {
+                setCurrentMeasureIndex((i) => Math.min(measures.length - 1, i + 1));
+                setSelectedNoteKey(null);
+                setSelectedRowIdx(null);
+                setChordTargetGrid(0);
+              }}
+            />
+          </>
+        )}
+      </div>
+      <section className="sb-paper" data-pfocus={phoneFocus}>
       <div className="sb-mobile-only" role="group" aria-label={tr("Staff size")} style={{ justifyContent: "flex-end", alignItems: "center", gap: 6, margin: "0 0 4px" }}>
         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{tr("Staff size")}</span>
         {(["S", "M", "L"] as const).map((label, i) => (
@@ -3712,7 +3775,7 @@ export default function StaffToFretboard({
 
       </section>
 
-      <section ref={boardRef} className="sb-board sb-board-tones">
+      <section ref={boardRef} className="sb-board sb-board-tones" data-pfocus={phoneFocus}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
         {fretboardViewButton}
         <span className="sb-mobile-only" style={{ marginLeft: "auto", gap: 6 }}>
