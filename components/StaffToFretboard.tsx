@@ -689,7 +689,7 @@ export default function StaffToFretboard({
   const boardRef = useRef<HTMLElement>(null);
   const [focusOn, setFocusOn] = useState(true);
   const [viewFrets, setViewFrets] = useState<12 | 17>(12);
-  const [focusLoState, setFocusLoState] = useState(0);
+  const [focusLoState, setFocusLoState] = useState(5); // 初期表示は5〜9フレット付近
   const [focusW, setFocusW] = useState(5);
   const [labelMode, setLabelMode] = useState<"key" | "chord">("chord");
   const [shapeSel, setShapeSel] = useState<ShapeName | null>(null);
@@ -3893,7 +3893,7 @@ export default function StaffToFretboard({
                   stroke={f === 0 ? "#d8d2c4" : "#8d877b"}
                   strokeWidth={f === 0 ? 5 : 2}
                 />
-                {(focusShape ? f >= focusLo && f <= focusHi : [3, 5, 7, 9, 12, 15, 17].includes(f)) && f > 0 && (
+                {[3, 5, 7, 9, 12, 15, 17].includes(f) && (!focusShape || (f >= focusLo && f <= focusHi)) && f > 0 && (
                   <text
                     x={x - fretW / 2}
                     y={fbTop - 21}
@@ -3922,6 +3922,7 @@ export default function StaffToFretboard({
                   strokeOpacity={0.75}
                   strokeWidth={0.8 + sIdx * 0.35}
                 />
+                {(!focusShape || focusLo === 0) && (
                 <text
                   x={focusShape ? focusX0 + 3 : fbLeft - 82}
                   y={y + 4}
@@ -3932,6 +3933,7 @@ export default function StaffToFretboard({
                 >
                   {focusShape ? `${st.num}·${st.label}` : tr("String") + " " + st.num + " · " + st.label}
                 </text>
+                )}
               </g>
             );
           })}
