@@ -793,6 +793,7 @@ export default function StaffToFretboard({
     load();
   }, []);
   const focusSegRef = useRef<HTMLDivElement>(null);
+  const fretDragRef = useRef<{ x: number; lo: number } | null>(null);
   const choosePhoneFocus = (v: "staff" | "board") => {
     setPhoneFocus(v);
     // 切り替えた直後は、上の操作欄を画面の外に送り、譜面(または指板)が画面いっぱいに出るようにする
@@ -3829,7 +3830,27 @@ export default function StaffToFretboard({
           ))}
         </div>
       )}
-      <div id="fretboard-wrap">
+      <div
+        id="fretboard-wrap"
+        style={focusShape ? { touchAction: "pan-y", cursor: "grab" } : undefined}
+        onPointerDown={(e) => {
+          if (!focusShape) return;
+          fretDragRef.current = { x: e.clientX, lo: focusLo };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = fretDragRef.current;
+          if (!d || !focusShape) return;
+          // 指を横に動かした分だけ、表示するフレットの範囲をずらす(1フレット幅ごとに1つ動く)
+          const rect = e.currentTarget.querySelector("svg")?.getBoundingClientRect();
+          if (!rect) return;
+          const scale = Math.min(rect.width / (focusX1 - focusX0), rect.height / 234);
+          const steps = Math.round(-(e.clientX - d.x) / (scale * 68));
+          setFocusLoState(Math.max(0, Math.min(FRETS - focusW + 1, d.lo + steps)));
+        }}
+        onPointerUp={() => { fretDragRef.current = null; }}
+        onPointerCancel={() => { fretDragRef.current = null; }}
+      >
         <svg
           id="fretboard"
           viewBox={focusShape ? `${focusX0} -14 ${focusX1 - focusX0} 234` : narrowFretboard ? `0 -14 ${fbLeft + 7 * fretW + 8} 234` : `0 -14 ${wholeX1} 234`}
