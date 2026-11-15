@@ -794,6 +794,41 @@ export default function StaffToFretboard({
   }, []);
   const focusSegRef = useRef<HTMLDivElement>(null);
   const fretDragRef = useRef<{ x: number; lo: number } | null>(null);
+  // 指板の入れ物の幅(px)。拡大表示で、余白を作らず画面いっぱいにフレットを並べるために使う
+  const fbWrapRef = useRef<HTMLDivElement | null>(null);
+  const [fbWrapW, setFbWrapW] = useState(0);
+  useEffect(() => {
+    const el = fbWrapRef.current;
+    if (!el) return;
+    const measure = () => setFbWrapW(Math.round(el.clientWidth));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // 練習中に画面が暗くならないようにする(対応ブラウザのみ。非対応・失敗しても何も起きない)
+  useEffect(() => {
+    type WakeLockSentinelLike = { release: () => Promise<void> };
+    let lock: WakeLockSentinelLike | null = null;
+    let cancelled = false;
+    const acquire = async () => {
+      try {
+        const wl = (navigator as unknown as { wakeLock?: { request: (t: "screen") => Promise<WakeLockSentinelLike> } }).wakeLock;
+        if (!wl || document.visibilityState !== "visible") return;
+        const l = await wl.request("screen");
+        if (cancelled) void l.release().catch(() => {});
+        else lock = l;
+      } catch {}
+    };
+    const onVis = () => { if (document.visibilityState === "visible") void acquire(); };
+    void acquire();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVis);
+      void lock?.release().catch(() => {});
+    };
+  }, []);
   const choosePhoneFocus = (v: "staff" | "board") => {
     setPhoneFocus(v);
     // 切り替えた直後は、上の操作欄を画面の外に送り、譜面(または指板)が画面いっぱいに出るようにする
@@ -1964,6 +1999,34 @@ export default function StaffToFretboard({
   const fbLeft = 150;
   const focusX0 = focusShape ? (focusLo === 0 ? fbLeft - 80 : fbLeft + (focusLo - 1) * 68 - 34) : 0;
   const focusX1 = focusShape ? fbLeft + focusHi * 68 + 12 : fbLeft + 12 * 68 + 24;
+  // 拡大表示: 入れ物の幅いっぱいにフレットを並べる(余白を作らない)。指定した範囲を
+  // 中央に、足りない分は左右のフレットで埋めて、見えているフレットはすべて表示する。
+  const fbCapPx = typeof window !== "undefined" ? Math.min(360, window.innerHeight * 0.46) : 360;
+  const fbExtendOk = !!focusShape && !narrowFretboard && fbWrapW > 0;
+  let visX0 = focusX0;
+  let visX1 = focusX1;
+  if (fbExtendOk) {
+    const want = Math.max(focusX1 - focusX0, (234 * fbWrapW) / fbCapPx);
+    const boardMin = fbLeft - 80;
+    const boardMax = fbLeft + FRETS * 68 + 12;
+    const w = Math.min(want, boardMax - boardMin);
+    let x0 = (focusX0 + focusX1) / 2 - w / 2;
+    if (x0 < boardMin) x0 = boardMin;
+    if (x0 + w > boardMax) x0 = boardMax - w;
+    visX0 = x0;
+    visX1 = x0 + w;
+  }
+  // フレットfのマーカー(中心 fbLeft+f*68-34)が、見えている範囲に収まるか
+  const fretVisible = (f: number) => {
+    if (!focusShape) return true;
+    if (!fbExtendOk) return f >= focusLo && f <= focusHi;
+    const cx = fbLeft + f * 68 - 34;
+    return cx - 17 >= visX0 && cx + 17 <= visX1;
+  };
+  let visLo = focusLo;
+  if (fbExtendOk) {
+    for (let f = 0; f <= FRETS; f++) if (fretVisible(f)) { visLo = f; break; }
+  }
   const wholeX1 = fbLeft + (viewFrets === 17 ? 17 : 12) * 68 + 24;
   // 12フレット目より上の位置(1オクターブ上のシェイプ)も描く
   const shapeInstances = shapeList.flatMap((sh) => {
@@ -3893,6 +3956,7 @@ export default function StaffToFretboard({
       )}
       <div
         id="fretboard-wrap"
+        ref={fbWrapRef}
         style={focusShape ? { touchAction: "pan-y", cursor: "grab" } : undefined}
         onPointerDown={(e) => {
           if (!focusShape) return;
@@ -3905,7 +3969,7 @@ export default function StaffToFretboard({
           // 指を横に動かした分だけ、表示するフレットの範囲をずらす(1フレット幅ごとに1つ動く)
           const rect = e.currentTarget.querySelector("svg")?.getBoundingClientRect();
           if (!rect) return;
-          const scale = Math.min(rect.width / (focusX1 - focusX0), rect.height / 234);
+          const scale = Math.min(rect.width / (visX1 - visX0), rect.height / 234);
           const steps = Math.round(-(e.clientX - d.x) / (scale * 68));
           setFocusLoState(Math.max(0, Math.min(FRETS - focusW + 1, d.lo + steps)));
         }}
@@ -3914,7 +3978,7 @@ export default function StaffToFretboard({
       >
         <svg
           id="fretboard"
-          viewBox={focusShape ? `${focusX0} -14 ${focusX1 - focusX0} 234` : narrowFretboard ? `0 -14 ${fbLeft + 7 * fretW + 8} 234` : `0 -14 ${wholeX1} 234`}
+          viewBox={focusShape ? `${visX0} -14 ${visX1 - visX0} 234` : narrowFretboard ? `0 -14 ${fbLeft + 7 * fretW + 8} 234` : `0 -14 ${wholeX1} 234`}
           style={{
             width: "100%",
             height: "auto",
@@ -3927,7 +3991,7 @@ export default function StaffToFretboard({
               ? {
                   overflow: "hidden" as const,
                   maxHeight: "min(360px, 46vh)",
-                  width: `min(100%, calc(min(360px, 46vh) * ${((focusX1 - focusX0) / 234).toFixed(4)}))`,
+                  width: `min(100%, calc(min(360px, 46vh) * ${((visX1 - visX0) / 234).toFixed(4)}))`,
                   margin: "0 auto",
                 }
               : focusShape
@@ -3993,7 +4057,7 @@ export default function StaffToFretboard({
                   stroke={f === 0 ? "#d8d2c4" : "#8d877b"}
                   strokeWidth={f === 0 ? 5 : 2}
                 />
-                {[3, 5, 7, 9, 12, 15, 17].includes(f) && (!focusShape || (f >= focusLo && f <= focusHi)) && f > 0 && (
+                {[3, 5, 7, 9, 12, 15, 17].includes(f) && (!focusShape || fretVisible(f)) && f > 0 && (
                   <text
                     x={x - fretW / 2}
                     y={fbTop - 21}
@@ -4022,9 +4086,9 @@ export default function StaffToFretboard({
                   strokeOpacity={0.75}
                   strokeWidth={0.8 + sIdx * 0.35}
                 />
-                {(!focusShape || focusLo === 0) && (
+                {(!focusShape || visLo === 0) && (
                 <text
-                  x={focusShape ? focusX0 + 3 : fbLeft - 82}
+                  x={focusShape ? visX0 + 3 : fbLeft - 82}
                   y={y + 4}
                   textAnchor={focusShape ? "start" : "end"}
                   fontSize={12}
@@ -4070,7 +4134,7 @@ export default function StaffToFretboard({
                   if (!isMelody && !isHarmonyTone) {
                     // キーの7音を、コードトーンの下に薄く出す(コードトーンと同じ位置には出さない)
                     if (!keyGhostOn || !KEY_SCALE_DEGREES.includes(degreeFor(pc, root))) return null;
-                    if (focusShape && (f < focusLo || f > focusHi)) return null;
+                    if (!fretVisible(f)) return null;
                     const gx = fbLeft + f * fretW - fretW / 2;
                     const gDeg = degreeFor(pc, labelMode === "chord" && displayedHarmony ? displayedHarmony.root : root);
                     const gLabel = labelMode === "chord" && displayedHarmony ? CHORD_DEGREE_NAMES[gDeg] : DEGREE_NAMES[gDeg];
@@ -4083,7 +4147,7 @@ export default function StaffToFretboard({
                       </g>
                     );
                   }
-                  if (focusShape && (f < focusLo || f > focusHi)) return null;
+                  if (!fretVisible(f)) return null;
                   const x = fbLeft + f * fretW - fretW / 2;
                   const useChordDeg = labelMode === "chord" && !!displayedHarmony;
                   const deg = degreeFor(pc, useChordDeg && displayedHarmony ? displayedHarmony.root : root);
