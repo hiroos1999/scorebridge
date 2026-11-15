@@ -827,6 +827,24 @@ export default function StaffToFretboard({
     };
     load();
   }, []);
+  // 再生スピード(倍率)と、指板だけのオクターブ表示シフト。選択は端末に保存する
+  const [playSpeed, setPlaySpeed] = useState(1);
+  const playSpeedRef = useRef(1);
+  useEffect(() => {
+    playSpeedRef.current = playSpeed;
+  }, [playSpeed]);
+  const [fretOctaveShift, setFretOctaveShift] = useState(0);
+  useEffect(() => {
+    const load = () => {
+      try {
+        const sp = Number(localStorage.getItem("sb-speed"));
+        if ([0.5, 0.6, 0.75, 0.9, 1].includes(sp)) setPlaySpeed(sp);
+        const oc = Number(localStorage.getItem("sb-fret-oct"));
+        if (oc === 1 || oc === 2 || oc === -1) setFretOctaveShift(oc);
+      } catch {}
+    };
+    load();
+  }, []);
   const toggleRepeat = () => {
     setRepeatOn((v) => {
       try { localStorage.setItem("sb-repeat", v ? "0" : "1"); } catch {}
@@ -1156,6 +1174,14 @@ export default function StaffToFretboard({
       events.push({ atMs: de.atMs, endMs: de.atMs, measureIndex: de.measureIndex, kind: "drum", voice: de.voice });
     });
     if (events.length === 0) return;
+    // 再生スピード: すべてのイベント時刻を一括で伸ばす(メロディ・ベース・ドラム・コード共通)
+    const timeScale = 1 / playSpeedRef.current;
+    if (timeScale !== 1) {
+      events.forEach((e) => {
+        e.atMs *= timeScale;
+        e.endMs *= timeScale;
+      });
+    }
     events.sort((a, b) => a.atMs - b.atMs);
     const overallEndMs = Math.max(...events.map((e) => e.endMs));
 
@@ -1219,7 +1245,7 @@ export default function StaffToFretboard({
     timeoutIdsRef.current.push(pumpId as unknown as ReturnType<typeof setTimeout>);
 
     // 1周の長さ(小節数ぶん)。リピート時は、次の周回をこの長さの分だけ後ろに、時刻を固定して予約する
-    const loopLenMs = Math.max(overallEndMs, score.length * measureDurationMs);
+    const loopLenMs = Math.max(overallEndMs, score.length * measureDurationMs * timeScale);
     const endDelayMs = Math.max(0, (t0 + loopLenMs / 1000 - actx.currentTime) * 1000);
     const endTimeoutId = setTimeout(() => {
       if (loopable && repeatRef.current) {
@@ -1828,7 +1854,40 @@ export default function StaffToFretboard({
   // オクターブをまたぐ場合も自然に正しい絶対ピッチになる。
   // ギター（移調楽器）の記譜慣習により、実際に鳴る音は記譜より1オクターブ低いため、
   // 指板とのマッチング判定にのみ -12 半音する（度数ラベルや調号などの表示には影響させない）。
-  const GUITAR_SOUNDING_OCTAVE_OFFSET = -12;
+  const GUITAR_SOUNDING_OCTAVE_OFFSET = -12 + 12 * fretOctaveShift;
+  const extraControls = (
+    <>
+      <select
+        aria-label={tr("Playback speed")}
+        value={playSpeed}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          setPlaySpeed(v);
+          try { localStorage.setItem("sb-speed", String(v)); } catch {}
+        }}
+        style={{ height: 36, borderRadius: 10, padding: "0 6px", fontSize: 13 }}
+      >
+        {[1, 0.9, 0.75, 0.6, 0.5].map((v) => (
+          <option key={v} value={v}>{`${tr("Speed")} ${Math.round(v * 100)}%`}</option>
+        ))}
+      </select>
+      <select
+        aria-label={tr("Fretboard octave")}
+        value={fretOctaveShift}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          setFretOctaveShift(v);
+          try { localStorage.setItem("sb-fret-oct", String(v)); } catch {}
+        }}
+        style={{ height: 36, borderRadius: 10, padding: "0 6px", fontSize: 13 }}
+      >
+        <option value={0}>{tr("Fretboard octave")} 0</option>
+        <option value={1}>{tr("Fretboard octave")} +1</option>
+        <option value={2}>{tr("Fretboard octave")} +2</option>
+        <option value={-1}>{tr("Fretboard octave")} −1</option>
+      </select>
+    </>
+  );
 
   // 指板には「今実際に鳴っている音」だけを表示する。曲全体や小節全体の音符を
   // まとめて出すことはしない（過去はactivePitchesが全小節を対象にしていたが、
@@ -2992,6 +3051,7 @@ export default function StaffToFretboard({
             onClick={handlePlayClick}
           />
           <IconButton id="repeat-btn" label={tr("Repeat")} icon={<Repeat size={16} />} active={repeatOn} onClick={toggleRepeat} />
+          {extraControls}
           <IconButton id="clear-btn" label={tr("Clear all")} icon={<Eraser size={16} />} onClick={handleClear} />
         </div>
         )}
@@ -3791,6 +3851,7 @@ export default function StaffToFretboard({
             onClick={handlePlayClick}
           />
           <IconButton id="repeat-btn-mobile" label={tr("Repeat")} icon={<Repeat size={16} />} active={repeatOn} onClick={toggleRepeat} />
+          {extraControls}
         </span>
         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
           {[
