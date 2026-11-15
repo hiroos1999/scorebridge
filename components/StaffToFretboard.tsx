@@ -3915,7 +3915,25 @@ export default function StaffToFretboard({
         <svg
           id="fretboard"
           viewBox={focusShape ? `${focusX0} -14 ${focusX1 - focusX0} 234` : narrowFretboard ? `0 -14 ${fbLeft + 7 * fretW + 8} 234` : `0 -14 ${wholeX1} 234`}
-          style={{ width: "100%", height: "auto", display: "block", minWidth: focusShape || narrowFretboard ? undefined : viewFrets === 17 ? "880px" : "660px" }}
+          style={{
+            width: "100%",
+            height: "auto",
+            display: "block",
+            minWidth: focusShape || narrowFretboard ? undefined : viewFrets === 17 ? "880px" : "660px",
+            // 拡大表示では、指定したフレット範囲の外側(シェイプの輪郭や隣のフレット)が
+            // 余白にはみ出して見えないよう切り取り、その範囲を大きく見せる
+            // (svg要素の幅を範囲の縦横比に合わせて絞り、中央に置く)
+            ...(focusShape && !narrowFretboard
+              ? {
+                  overflow: "hidden" as const,
+                  maxHeight: "min(360px, 46vh)",
+                  width: `min(100%, calc(min(360px, 46vh) * ${((focusX1 - focusX0) / 234).toFixed(4)}))`,
+                  margin: "0 auto",
+                }
+              : focusShape
+                ? { overflow: "hidden" as const }
+                : null),
+          }}
         >
           <defs>
             {Object.keys(SHAPE_COLORS).map((k) => (
