@@ -2001,7 +2001,7 @@ export default function StaffToFretboard({
   const focusX1 = focusShape ? fbLeft + focusHi * 68 + 12 : fbLeft + 12 * 68 + 24;
   // 拡大表示: 入れ物の幅いっぱいにフレットを並べる(余白を作らない)。指定した範囲を
   // 中央に、足りない分は左右のフレットで埋めて、見えているフレットはすべて表示する。
-  const fbCapPx = typeof window !== "undefined" ? Math.min(360, window.innerHeight * 0.46) : 360;
+  const fbCapPx = typeof window !== "undefined" ? Math.min(520, window.innerHeight * 0.58) : 520;
   const fbExtendOk = !!focusShape && !narrowFretboard && fbWrapW > 0;
   let visX0 = focusX0;
   let visX1 = focusX1;
@@ -3916,14 +3916,6 @@ export default function StaffToFretboard({
           <IconButton id="repeat-btn-mobile" label={tr("Repeat")} icon={<Repeat size={16} />} active={repeatOn} onClick={toggleRepeat} />
           {extraControls}
         </span>
-        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-          {[
-            shapesOn ? "CAGED" : null,
-            dropOn ? "Drop 2" : null,
-            focusOn ? `${tr("Focus")} ${focusLo}–${focusHi}` : `${viewFrets} ${tr("frets")}`,
-            labelMode === "key" ? tr("Do Re Mi") : "1 3 5 7",
-          ].filter(Boolean).join(" · ")}
-        </span>
       </div>
       {fretboardSheet}
       {dropOn && (
@@ -3990,8 +3982,8 @@ export default function StaffToFretboard({
             ...(focusShape && !narrowFretboard
               ? {
                   overflow: "hidden" as const,
-                  maxHeight: "min(360px, 46vh)",
-                  width: `min(100%, calc(min(360px, 46vh) * ${((visX1 - visX0) / 234).toFixed(4)}))`,
+                  maxHeight: "min(520px, 58vh)",
+                  width: `min(100%, calc(min(520px, 58vh) * ${((visX1 - visX0) / 234).toFixed(4)}))`,
                   margin: "0 auto",
                 }
               : focusShape
@@ -4201,50 +4193,12 @@ export default function StaffToFretboard({
         </svg>
       </div>
 
-      <div
-        id="degree-legend"
-        className="sb-hide-phone"
-        aria-label={tr("Colour key")}
-        style={{ display: "flex", flexWrap: "wrap", gap: "6px 10px", marginTop: "0.5rem", fontSize: 12, color: "var(--text-secondary)" }}
-      >
-        {(labelMode === "chord"
-          ? [
-              { label: "1 · root", role: "danger" },
-              { label: "3, ♭3 · 3rd", role: "warning" },
-              { label: "11 · 4th", role: "accent" },
-              { label: "♭5, 5", role: "success" },
-              { label: "♭7, 7", role: "info" },
-              { label: "9, 6/13", role: "pro" },
-              { label: tr("Other"), role: "gray" },
-            ]
-          : [
-              { label: tr("Do · root"), role: "danger" },
-              { label: tr("Mi · 3rd"), role: "warning" },
-              { label: tr("Fa · 4th"), role: "accent" },
-              { label: tr("Sol · 5th"), role: "success" },
-              { label: tr("Ti · 7th"), role: "info" },
-              { label: tr("Re, La · 2nd, 6th"), role: "pro" },
-              { label: tr("Chromatic"), role: "gray" },
-            ]
-        ).map((it) => (
-          <span key={it.label} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <span
-              aria-hidden
-              style={{ width: 12, height: 12, borderRadius: "50%", display: "inline-block", background: colorFor(it.role)[0] }}
-            />
-            {it.label}
-          </span>
-        ))}
-      </div>
       {narrowFretboard && (
         <div className="sb-hide-phone" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
           {tr("Showing frets 0–7. Rotate your device to see up to fret 12.")}
         </div>
       )}
 
-      <div id="legend" className="sb-hide-phone">
-        Click the staff to place a note; click the same spot again to remove it. A selected note shows accidental and duration controls below.
-      </div>
       </section>
       </>
       )}
