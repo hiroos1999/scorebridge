@@ -223,6 +223,39 @@ export function detectChords(pitches: number[], keyRoot: number | null, limit = 
     });
   });
   out.sort((x, y) => y.score - x.score);
+
+  // ディミニッシュ7th(4音)は、ルートを省いた7(♭9)としても読める。
+  // 例: A♭dim7 = G7(♭9)のルート抜き。各音の半音下をルートとする4つの7(♭9)を候補に足し、
+  // 曲のキーのV(ドミナント)に当たるものを一番上に、キーの音の上のものをその次に置く。
+  // 同じディミニッシュの転回形(Bdim7/A♭など)は名前が増えるだけなので外す。
+  const top = out[0];
+  if (top && top.quality === "dim7" && pcs.size === 4) {
+    const doms: ChordCandidate[] = [];
+    pcs.forEach((p) => {
+      const r = (p + 11) % 12;
+      let score = top.score - 0.5;
+      if (keyRoot !== null) {
+        const deg = (r - keyRoot + 12) % 12;
+        if (deg === 7) score += 2.2;
+        else if (MAJOR_SCALE.includes(deg)) score += 0.3;
+      }
+      const tensions: Tension[] = [{ degree: 9, alter: -1 }];
+      doms.push({
+        root: r,
+        quality: "7",
+        tensions,
+        bass: null,
+        intervals: [0, 1, 4, 7, 10],
+        appKind: "7",
+        suffix: chordSuffix("7", tensions),
+        score,
+      });
+    });
+    const rest = out.filter((c) => c.quality !== "dim7" || c === top);
+    rest.push(...doms);
+    rest.sort((x, y) => y.score - x.score);
+    return rest.slice(0, Math.max(limit, 4));
+  }
   // 1位と比べて明らかに不自然な読み方は候補に出さない
   const best = out[0]?.score ?? 0;
   return out.filter((c, i) => i === 0 || (c.score >= best - 4 && c.score > 2)).slice(0, limit);
