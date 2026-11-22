@@ -2073,7 +2073,9 @@ export default function StaffToFretboard({
 
   // ---- 指板入力とコード判別 ----
   const fbPitches = fbVoicing.flatMap((f, sIdx) => (f === null ? [] : [strings[sIdx].octave * 12 + strings[sIdx].open + f]));
-  const fbCands: ChordCandidate[] = fbInputOn ? detectChords(fbPitches, root) : [];
+  // 最低音を押さえた弦(sIdx 4=5弦, 5=6弦)。分数コードは5弦・6弦が最低音のときだけ付ける
+  const fbLowString = fbVoicing.reduce<number>((m, f, i) => (f === null ? m : i), -1);
+  const fbCands: ChordCandidate[] = fbInputOn ? detectChords(fbPitches, root, 3, { lowBass: fbLowString >= 4 }) : [];
   const fbCand: ChordCandidate | undefined = fbCands[Math.min(fbCandIdx, Math.max(0, fbCands.length - 1))];
   const fbChordName = (c: ChordCandidate) => `${names[c.root]}${c.suffix}${c.bass !== null ? `/${names[c.bass]}` : ""}`;
   // 度数の書き方をコードに合わせる(♯9と♭3、♯11と♭5、♭13と♯5、13と6を区別する)

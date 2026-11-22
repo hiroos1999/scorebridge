@@ -30,6 +30,7 @@ const QUALITY_LABEL: Record<string, string> = {
   "6": "6",
   m6: "m6",
   mMaj7: "m△7",
+  mMaj7b5: "m△7(♭5)",
   sus4: "sus4",
   "7sus4": "7sus4",
   aug: "aug",
@@ -48,6 +49,7 @@ const APP_KIND: Record<string, string> = {
   "6": "6",
   m6: "m6",
   mMaj7: "mMaj7",
+  mMaj7b5: "mMaj7",
   sus4: "7",
   "7sus4": "7",
   aug: "7",
@@ -83,6 +85,27 @@ export function chordSuffix(quality: string, tensions: Tension[]): string {
 }
 
 const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
+
+// キーのダイアトニックコード(長調)。度数(キーの主音からの半音数) → その度数の上で自然な型
+const DIATONIC: Record<number, string[]> = {
+  0: ["", "maj7", "6"],
+  2: ["m", "m7", "m6"],
+  4: ["m", "m7"],
+  5: ["", "maj7", "6"],
+  7: ["", "7", "sus4", "7sus4"],
+  9: ["m", "m7"],
+  11: ["dim", "m7b5"],
+};
+
+// ダイアトニックコードそのもの(ルートも型も合う)を一番優先し、
+// ルートだけがキーの音のもの(セカンダリー・ドミナントなど)をその次にする
+function keyBonus(root: number, quality: string, keyRoot: number | null): number {
+  if (keyRoot === null) return 0;
+  const deg = (root - keyRoot + 12) % 12;
+  if (DIATONIC[deg]?.includes(quality)) return 1.8;
+  if (MAJOR_SCALE.includes(deg)) return 0.5;
+  return 0;
+}
 
 function analyzeRoot(intervals: Set<number>): { quality: string; tensions: Tension[]; leftover: number; score: number } | null {
   const has = (i: number) => intervals.has(i);
@@ -149,7 +172,7 @@ function analyzeRoot(intervals: Set<number>): { quality: string; tensions: Tensi
     if (fifth === "b5") {
       if (seventh === "b7") quality = "m7b5";
       else if (seventh === "bb7") quality = "dim7";
-      else if (seventh === "M7") quality = "mMaj7";
+      else if (seventh === "M7") quality = "mMaj7b5"; // めったに使わない型なので下で減点
       else quality = "dim";
     } else if (seventh === "b7") quality = "m7";
     else if (seventh === "M7") quality = "mMaj7";
@@ -188,6 +211,7 @@ function analyzeRoot(intervals: Set<number>): { quality: string; tensions: Tensi
   // 三和音にテンションを足した読み方より、素直な転回形(分数コード)を優先する
   if (!seventh && tensions.length > 0 && !(tensions.length === 1 && tensions[0].degree === 9 && tensions[0].alter === 0)) score -= 2;
   if (tensions.length === 0) score += 0.5;
+  if (quality === "mMaj7b5") score -= 1;
   return { quality, tensions, leftover, score };
 }
 
@@ -195,7 +219,12 @@ function analyzeRoot(intervals: Set<number>): { quality: string; tensions: Tensi
  * pitches: 押さえた音の絶対ピッチ(どの高さでもよい。最低音を分数コードの判定に使う)
  * keyRoot: 曲のキー(長調の主音のピッチクラス)。候補の順位付けに使う
  */
-export function detectChords(pitches: number[], keyRoot: number | null, limit = 3): ChordCandidate[] {
+/**
+ * opts.lowBass: 最低音が5弦か6弦のときだけtrue。分数コード(/B など)はこのときだけ名前に付け、
+ *   最低音がルートかどうかも順位に使う(4弦より上だけで押さえた形は、最低音にこだわらない)
+ */
+export function detectChords(pitches: number[], keyRoot: number | null, limit = 3, opts: { lowBass?: boolean } = {}): ChordCandidate[] {
+  const lowBass = opts.lowBass ?? true;
   if (pitches.length < 2) return [];
   const pcs = new Set(pitches.map((p) => ((p % 12) + 12) % 12));
   if (pcs.size < 2) return [];
@@ -207,15 +236,15 @@ export function detectChords(pitches: number[], keyRoot: number | null, limit = 
     const a = analyzeRoot(intervals);
     if (!a || a.leftover > 0) return;
     let score = a.score;
-    if (root === bassPc) score += 3; // 最低音がルート
-    if (keyRoot !== null && MAJOR_SCALE.includes((root - keyRoot + 12) % 12)) score += 0.8; // キーの音の上のコード
+    if (lowBass && root === bassPc) score += 3; // 最低音(5弦・6弦)がルート
+    score += keyBonus(root, a.quality, keyRoot);
     // 2音だけなら3度が無いと決められないので、確信度を下げる
     if (pcs.size === 2) score -= 2;
     out.push({
       root,
       quality: a.quality,
       tensions: a.tensions,
-      bass: root === bassPc ? null : bassPc,
+      bass: !lowBass || root === bassPc ? null : bassPc,
       intervals: [...intervals].sort((x, y) => x - y),
       appKind: APP_KIND[a.quality] ?? "7",
       suffix: chordSuffix(a.quality, a.tensions),
@@ -233,11 +262,9 @@ export function detectChords(pitches: number[], keyRoot: number | null, limit = 
       const a = analyzeRoot(intervals);
       if (!a || a.leftover > 0 || a.quality !== "7") continue;
       let score = a.score - 1 + 1.5; // ルートが無い分を減点、ガイドトーンがそろう分を加点
-      if (keyRoot !== null) {
-        const deg = (root - keyRoot + 12) % 12;
-        if (deg === 7) score += 2.2; // キーのV
-        else if (MAJOR_SCALE.includes(deg)) score += 0.3;
-      }
+      score += keyBonus(root, a.quality, keyRoot);
+      // ルート抜きの読み方は、ルートを弾いた読み方と比べて最低音の加点が無いぶん不利なので、少し戻す
+      if (!lowBass) score += 0.5;
       out.push({
         root,
         quality: a.quality,
@@ -289,6 +316,6 @@ export function detectChords(pitches: number[], keyRoot: number | null, limit = 
   const best = out[0]?.score ?? 0;
   // ルートレスの読み方は、素直な読み方より明らかに下なら出さない(裏コードの言い換えが増えすぎるため)
   return out
-    .filter((c, i) => i === 0 || (c.score >= best - (pcs.has(c.root) ? 4 : 2.5) && c.score > 2))
+    .filter((c, i) => i === 0 || (c.score >= best - (pcs.has(c.root) ? 4 : 2) && c.score > 2))
     .slice(0, limit);
 }
