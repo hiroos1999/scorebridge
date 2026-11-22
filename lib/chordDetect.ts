@@ -222,6 +222,34 @@ export function detectChords(pitches: number[], keyRoot: number | null, limit = 
       score,
     });
   });
+  // ルートを弾かない7th(ルートレス・ボイシング)。3度と♭7(ガイドトーン)がそろい、
+  // 残りがテンションで説明できるときだけ候補にする。例: B・F・A♭・E → G7(♭9 13)
+  if (pcs.size >= 3) {
+    for (let root = 0; root < 12; root++) {
+      if (pcs.has(root)) continue;
+      const intervals = new Set<number>([0]);
+      pcs.forEach((p) => intervals.add((p - root + 12) % 12));
+      if (!intervals.has(4) || !intervals.has(10)) continue;
+      const a = analyzeRoot(intervals);
+      if (!a || a.leftover > 0 || a.quality !== "7") continue;
+      let score = a.score - 1 + 1.5; // ルートが無い分を減点、ガイドトーンがそろう分を加点
+      if (keyRoot !== null) {
+        const deg = (root - keyRoot + 12) % 12;
+        if (deg === 7) score += 2.2; // キーのV
+        else if (MAJOR_SCALE.includes(deg)) score += 0.3;
+      }
+      out.push({
+        root,
+        quality: a.quality,
+        tensions: a.tensions,
+        bass: null,
+        intervals: [...intervals].sort((x, y) => x - y),
+        appKind: "7",
+        suffix: chordSuffix(a.quality, a.tensions),
+        score,
+      });
+    }
+  }
   out.sort((x, y) => y.score - x.score);
 
   // ディミニッシュ7th(4音)は、ルートを省いた7(♭9)としても読める。
@@ -251,12 +279,16 @@ export function detectChords(pitches: number[], keyRoot: number | null, limit = 
         score,
       });
     });
-    const rest = out.filter((c) => c.quality !== "dim7" || c === top);
+    const domRoots = new Set(doms.map((d) => d.root));
+    const rest = out.filter((c) => (c.quality !== "dim7" || c === top) && !(c.quality === "7" && domRoots.has(c.root)));
     rest.push(...doms);
     rest.sort((x, y) => y.score - x.score);
     return rest.slice(0, Math.max(limit, 4));
   }
   // 1位と比べて明らかに不自然な読み方は候補に出さない
   const best = out[0]?.score ?? 0;
-  return out.filter((c, i) => i === 0 || (c.score >= best - 4 && c.score > 2)).slice(0, limit);
+  // ルートレスの読み方は、素直な読み方より明らかに下なら出さない(裏コードの言い換えが増えすぎるため)
+  return out
+    .filter((c, i) => i === 0 || (c.score >= best - (pcs.has(c.root) ? 4 : 2.5) && c.score > 2))
+    .slice(0, limit);
 }
