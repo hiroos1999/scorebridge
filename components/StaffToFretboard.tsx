@@ -7,6 +7,7 @@ import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES, TEMPLATE_CATEGORY_LABELS, type TemplateCategory } from "@/lib/templates";
 import { PRACTICE_ORDERS, prefersFlats, transposeMeasures } from "@/lib/transpose";
+import { detectChords, type ChordCandidate } from "@/lib/chordDetect";
 import { applyPatternToMeasures, parsePattern, PATTERN_PRESETS } from "@/lib/patterns";
 import { parseChordProgression } from "@/lib/chordText";
 import { preprocessScoreImage } from "@/lib/imagePreprocess";
@@ -27,6 +28,18 @@ const DEGREE_NAMES = ["Do", "Di", "Re", "Me", "Mi", "Fa", "Fi", "Sol", "Le", "La
 // キー(移動ド)のメジャースケールの7音(キー主音からの半音数)
 const KEY_SCALE_DEGREES = [0, 2, 4, 5, 7, 9, 11];
 const CHORD_DEGREE_NAMES = ["1", "♭9", "9", "♭3", "3", "11", "♭5", "5", "♭13", "13", "♭7", "7"];
+// 指板入力で決めたコード(構成音の間隔を持つもの)の度数の書き方。
+// 同じ半音数でも、コードの中の役割で ♯9/♭3、♯11/♭5、♭13/♯5、13/6 を書き分ける
+function tonesDegreeLabel(interval: number, tones: number[]): string {
+  const has = (i: number) => tones.includes(i);
+  const seventh = has(10) || has(11);
+  if (interval === 3 && has(4)) return "♯9";
+  if (interval === 5 && !has(3) && !has(4)) return "4";
+  if (interval === 6 && has(7)) return "♯11";
+  if (interval === 8 && has(4) && !has(7) && !seventh) return "♯5";
+  if (interval === 9) return seventh ? "13" : has(3) && has(6) ? "♭♭7" : "6";
+  return CHORD_DEGREE_NAMES[interval];
+}
 // 色分け: 1=赤 / 3=橙 / 5=緑 / 7=青(3度と7度はジャズのガイドトーン) / 9・13=紫 / 11=金
 const CHORD_DEGREE_ROLE = ["danger", "gray", "pro", "warning", "warning", "accent", "success", "success", "gray", "pro", "info", "info"];
 const DEGREE_ROLE = [
@@ -317,6 +330,11 @@ export type Harmony = {
   root: number; // ルート音のピッチクラス
   kind: string; // コードタイプ（maj7, m7, 7, dim, m7b5等。MusicXMLのkind相当）
   inversion: number; // 転回形（0=基本形, 1=第1転回形…）。MusicXMLのinversion相当
+  // ↓ 指板入力で決めたコードだけが持つ(古い保存データには無い)
+  label?: string; // 表示名(ルート名を除く)。例 "7(♭9)"。kindの8種類で表せない型やテンションを書く
+  bass?: number; // 分数コードのベース音のピッチクラス
+  tones?: number[]; // ルートからの半音間隔(テンション込み)。指板のコードトーン表示に使う
+  voicing?: (number | null)[]; // 1弦〜6弦のフレット(null=弾かない)。あれば指板にはこの形だけを出す
 };
 
 export type Measure = {
@@ -794,6 +812,11 @@ export default function StaffToFretboard({
   }, []);
   const focusSegRef = useRef<HTMLDivElement>(null);
   const fretDragRef = useRef<{ x: number; lo: number } | null>(null);
+  // 指板入力: 1弦〜6弦それぞれに押さえるフレット(null=弾かない)。タップで置き、同じ所をもう一度タップで外す
+  const [fbInputOn, setFbInputOn] = useState(false);
+  const [fbVoicing, setFbVoicing] = useState<(number | null)[]>([null, null, null, null, null, null]);
+  const [fbCandIdx, setFbCandIdx] = useState(0);
+  const fretTapRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   // 指板の入れ物の幅(px)。拡大表示で、余白を作らず画面いっぱいにフレットを並べるために使う
   const fbWrapRef = useRef<HTMLDivElement | null>(null);
   const [fbWrapW, setFbWrapW] = useState(0);
@@ -1979,7 +2002,7 @@ export default function StaffToFretboard({
   const displayedHarmony = isPlaying ? playingHarmonyInCurrentMeasure : chordCursorHarmony;
   const harmonyPitchClasses = new Set(
     (displayedHarmony ? [displayedHarmony] : []).flatMap((h) =>
-      (CHORD_TYPES[h.kind] ?? []).map((interval) => (h.root + interval) % 12)
+      (h.tones ?? CHORD_TYPES[h.kind] ?? []).map((interval) => (h.root + interval) % 12)
     )
   );
 
@@ -2039,10 +2062,93 @@ export default function StaffToFretboard({
           .filter((v) => (dropSet === null || v.set === dropSet) && (dropInv === null || v.bass === dropInv))
           .map((v) => ({ name: `d2-${v.bass}`, start: v.start, full: v.full, notes: v.notes }))
       : [];
-  const visibleShapes: { name: string; start: number; full: boolean; notes: { s: number; f: number; role: string }[] }[] = dropOn
+  // 指板入力中と、押さえ方を持つコードの表示中は、その形だけを見せるためシェイプを重ねない
+  const harmVoicing = !fbInputOn ? displayedHarmony?.voicing : undefined;
+  const visibleShapes: { name: string; start: number; full: boolean; notes: { s: number; f: number; role: string }[] }[] = fbInputOn || harmVoicing
+    ? []
+    : dropOn
     ? dropShapes
     : shapeInstances.filter((sh) => shapeSel === null || sh.name === shapeSel);
   const shapeNoteKeys = new Set(visibleShapes.flatMap((sh) => sh.notes.map((n) => `${n.s}:${n.f}`)));
+
+  // ---- 指板入力とコード判別 ----
+  const fbPitches = fbVoicing.flatMap((f, sIdx) => (f === null ? [] : [strings[sIdx].octave * 12 + strings[sIdx].open + f]));
+  const fbCands: ChordCandidate[] = fbInputOn ? detectChords(fbPitches, root) : [];
+  const fbCand: ChordCandidate | undefined = fbCands[Math.min(fbCandIdx, Math.max(0, fbCands.length - 1))];
+  const fbChordName = (c: ChordCandidate) => `${names[c.root]}${c.suffix}${c.bass !== null ? `/${names[c.bass]}` : ""}`;
+  // 度数の書き方をコードに合わせる(♯9と♭3、♯11と♭5、♭13と♯5、13と6を区別する)
+  const fbDegreeLabel = (interval: number, c: ChordCandidate | undefined) => {
+    const t = (d: number, a: number) => !!c?.tensions.some((x) => x.degree === d && x.alter === a);
+    if (interval === 3 && t(9, 1)) return "♯9";
+    if (interval === 5 && c && (c.quality === "sus4" || c.quality === "7sus4")) return "4";
+    if (interval === 6 && t(11, 1)) return "♯11";
+    if (interval === 8 && c?.quality === "aug") return "♯5";
+    if (interval === 9 && c) return c.quality === "6" || c.quality === "m6" ? "6" : c.quality === "dim7" ? "♭♭7" : "13";
+    return CHORD_DEGREE_NAMES[interval];
+  };
+  function handleFretTap(clientX: number, clientY: number, svg: SVGSVGElement | null) {
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return;
+    const pt = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+    const sIdx = Math.round((pt.y - fbTop) / stringGap);
+    if (sIdx < 0 || sIdx > 5 || Math.abs(pt.y - (fbTop + sIdx * stringGap)) > stringGap * 0.6) return;
+    const f = pt.x < fbLeft ? 0 : Math.min(FRETS, Math.floor((pt.x - fbLeft) / fretW) + 1);
+    setFbVoicing((v) => v.map((cur, i) => (i === sIdx ? (cur === f ? null : f) : cur)));
+    setFbCandIdx(0);
+  }
+  async function playFbVoicing() {
+    if (fbPitches.length === 0) return;
+    await ensureSamplesLoaded();
+    const actx = ensureAudioContext();
+    // 低い弦から順に、少しずつずらして鳴らす(ストローク)。指板の音は記譜より1オクターブ低いので+12して鳴らす
+    [...fbPitches].sort((a, b) => a - b).forEach((p, i) => playMelodyTone(p + 12, 1.6, actx.currentTime + 0.05 + i * 0.035));
+  }
+  function placeFbChord() {
+    if (!fbCand) return;
+    const offsetGrid = chordTargetGrid;
+    const harmony: Harmony = {
+      offsetGrid,
+      root: fbCand.root,
+      kind: fbCand.appKind,
+      inversion: 0,
+      label: fbCand.suffix,
+      ...(fbCand.bass !== null ? { bass: fbCand.bass } : {}),
+      tones: fbCand.intervals,
+      voicing: [...fbVoicing],
+    };
+    updateMeasureHarmonies(currentMeasureIndex, (hs) => [...hs.filter((h) => h.offsetGrid !== offsetGrid), harmony]);
+  }
+  function toggleFbInput() {
+    setFbInputOn((on) => {
+      // 入れるとき、今表示しているコードが押さえ方を持っていれば、その形から始める
+      if (!on) setFbVoicing(displayedHarmony?.voicing ? [...displayedHarmony.voicing] : [null, null, null, null, null, null]);
+      return !on;
+    });
+    setFbCandIdx(0);
+  }
+  const fbChipStyle = (active: boolean): React.CSSProperties => ({
+    minHeight: 36, padding: "0 12px", borderRadius: 999, fontWeight: 700, fontSize: 14,
+    border: `1px solid ${active ? "var(--accent)" : "var(--border-strong)"}`,
+    background: active ? "var(--accent)" : "transparent",
+    color: active ? "var(--on-accent)" : "var(--text-primary)",
+  });
+  const fbInputPanel = fbInputOn ? (
+    <div id="fb-input-panel" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 8px", minHeight: 48 }}>
+      <span aria-live="polite" style={{ fontSize: 30, fontWeight: 800, color: "var(--accent)", minWidth: 120 }}>
+        {fbCand ? fbChordName(fbCand) : "—"}
+      </span>
+      {fbCands.length > 1 && fbCands.map((c, i) =>
+        i === Math.min(fbCandIdx, fbCands.length - 1) ? null : (
+          <button key={i} type="button" style={fbChipStyle(false)} onClick={() => setFbCandIdx(i)}>{fbChordName(c)}</button>
+        )
+      )}
+      <span style={{ marginLeft: "auto", display: "inline-flex", gap: 8 }}>
+        <button type="button" style={fbChipStyle(false)} disabled={fbPitches.length === 0} onClick={() => void playFbVoicing()}>{tr("Strum")}</button>
+        <button type="button" style={fbChipStyle(true)} disabled={!fbCand} onClick={placeFbChord}>{tr("Add to staff")}</button>
+        <button type="button" style={fbChipStyle(false)} onClick={() => { setFbVoicing([null, null, null, null, null, null]); setFbCandIdx(0); }}>{tr("Clear")}</button>
+      </span>
+    </div>
+  ) : null;
 
   const fretboardViewButton = (
         <button
@@ -2704,7 +2810,7 @@ export default function StaffToFretboard({
         {harmoniesToRender.map((h, hi) => {
           const x = xForOffset(h.offsetGrid);
           const voiced = buildChordVoicing(h.root, h.kind, useFlats, h.inversion);
-          const label = `${names[h.root]}${CHORD_TYPE_LABELS[h.kind] ?? h.kind}`;
+          const label = `${names[h.root]}${h.label ?? CHORD_TYPE_LABELS[h.kind] ?? h.kind}${h.bass !== undefined ? `/${names[h.bass]}` : ""}`;
           return (
             <g key={`harmony-${h.offsetGrid}-${hi}`}>
               <text
@@ -3902,6 +4008,9 @@ export default function StaffToFretboard({
       <section ref={boardRef} className="sb-board sb-board-tones" data-pfocus={phoneFocus}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 0 8px" }}>
         {fretboardViewButton}
+        <button type="button" aria-pressed={fbInputOn} onClick={toggleFbInput} style={{ ...fbChipStyle(fbInputOn), minHeight: 40, padding: "0 14px" }}>
+          {tr("Fretboard input")}
+        </button>
         <span className="sb-mobile-only" style={{ marginLeft: "auto", gap: 6 }}>
           <IconButton
             id="play-btn-mobile"
@@ -3918,6 +4027,7 @@ export default function StaffToFretboard({
         </span>
       </div>
       {fretboardSheet}
+      {fbInputPanel}
       {dropOn && (
         <div role="group" aria-label={tr("String set")} style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0 0 6px" }}>
           {([null, 0, 1, 2] as (number | null)[]).map((i) => (
@@ -3949,13 +4059,16 @@ export default function StaffToFretboard({
       <div
         id="fretboard-wrap"
         ref={fbWrapRef}
-        style={focusShape ? { touchAction: "pan-y", cursor: "grab" } : undefined}
+        style={fbInputOn ? { touchAction: "pan-y", cursor: "pointer" } : focusShape ? { touchAction: "pan-y", cursor: "grab" } : undefined}
         onPointerDown={(e) => {
+          fretTapRef.current = { x: e.clientX, y: e.clientY, moved: false };
           if (!focusShape) return;
           fretDragRef.current = { x: e.clientX, lo: focusLo };
           e.currentTarget.setPointerCapture(e.pointerId);
         }}
         onPointerMove={(e) => {
+          const tap = fretTapRef.current;
+          if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8) tap.moved = true;
           const d = fretDragRef.current;
           if (!d || !focusShape) return;
           // 指を横に動かした分だけ、表示するフレットの範囲をずらす(1フレット幅ごとに1つ動く)
@@ -3965,8 +4078,14 @@ export default function StaffToFretboard({
           const steps = Math.round(-(e.clientX - d.x) / (scale * 68));
           setFocusLoState(Math.max(0, Math.min(FRETS - focusW + 1, d.lo + steps)));
         }}
-        onPointerUp={() => { fretDragRef.current = null; }}
-        onPointerCancel={() => { fretDragRef.current = null; }}
+        onPointerUp={(e) => {
+          const tap = fretTapRef.current;
+          fretDragRef.current = null;
+          fretTapRef.current = null;
+          // 指板入力中は、すべらせずに離したときだけ「押さえる」として扱う(すべらせたらフレット範囲の移動)
+          if (fbInputOn && tap && !tap.moved) handleFretTap(e.clientX, e.clientY, e.currentTarget.querySelector("svg#fretboard"));
+        }}
+        onPointerCancel={() => { fretDragRef.current = null; fretTapRef.current = null; }}
       >
         <svg
           id="fretboard"
@@ -4119,10 +4238,25 @@ export default function StaffToFretboard({
                 {Array.from({ length: FRETS + 1 }, (_, f) => {
                   const absPitch = st.octave * 12 + st.open + f;
                   const pc = (st.open + f) % 12;
+                  if (fbInputOn) {
+                    // 指板入力中は、押さえた位置だけを出す(丸の中は判別したコードから見た度数)
+                    if (fbVoicing[sIdx] !== f || !fretVisible(f)) return null;
+                    const ix = fbLeft + f * fretW - fretW / 2;
+                    const interval = (pc - (fbCand ? fbCand.root : root) + 12) % 12;
+                    const [ifill] = colorFor(CHORD_DEGREE_ROLE[interval]);
+                    return (
+                      <g key={f} pointerEvents="none">
+                        <circle cx={ix} cy={y} r={16} style={{ fill: ifill }} />
+                        <text x={ix} y={y + 5} textAnchor="middle" fontSize={13} fontWeight="bold" style={{ fill: "#ffffff", stroke: "rgba(0,0,0,0.55)", strokeWidth: 2, paintOrder: "stroke" }}>
+                          {fbCand ? fbDegreeLabel(interval, fbCand) : CHORD_DEGREE_NAMES[interval]}
+                        </text>
+                      </g>
+                    );
+                  }
                   const isMelody = displayedMelodyAbsPitches.has(absPitch);
                   // 同じポジションが実際のメロディ音符でもある場合は、通常濃度の
                   // メロディ表示を優先し、半透明のコードマーカーは重ねて描かない。
-                  const isHarmonyTone = !isMelody && harmonyPitchClasses.has(pc);
+                  const isHarmonyTone = !isMelody && (harmVoicing ? harmVoicing[sIdx] === f : harmonyPitchClasses.has(pc));
                   if (!isMelody && !isHarmonyTone) {
                     // キーの7音を、コードトーンの下に薄く出す(コードトーンと同じ位置には出さない)
                     if (!keyGhostOn || !KEY_SCALE_DEGREES.includes(degreeFor(pc, root))) return null;
@@ -4144,8 +4278,10 @@ export default function StaffToFretboard({
                   const useChordDeg = labelMode === "chord" && !!displayedHarmony;
                   const deg = degreeFor(pc, useChordDeg && displayedHarmony ? displayedHarmony.root : root);
                   const [fill] = colorFor((useChordDeg ? CHORD_DEGREE_ROLE : DEGREE_ROLE)[deg]);
-                  const chordLabel =
-                    deg === 9 && displayedHarmony
+                  const tones = displayedHarmony?.tones;
+                  const chordLabel = tones && displayedHarmony
+                    ? tonesDegreeLabel(deg, tones)
+                    : deg === 9 && displayedHarmony
                       ? displayedHarmony.kind === "dim"
                         ? "♭♭7"
                         : displayedHarmony.kind.includes("6")
@@ -4166,7 +4302,7 @@ export default function StaffToFretboard({
                         cy={y}
                         r={isPlaying ? 17 : 15}
                         style={{ fill }}
-                        opacity={isHarmonyTone && !shapeNoteKeys.has(`${sIdx}:${f}`) ? 0.45 : 1}
+                        opacity={isHarmonyTone && !harmVoicing && !shapeNoteKeys.has(`${sIdx}:${f}`) ? 0.45 : 1}
                       />
                       <text
                         x={x}
@@ -4174,7 +4310,7 @@ export default function StaffToFretboard({
                         textAnchor="middle"
                         fontSize={13}
                         fontWeight="bold"
-                        opacity={isHarmonyTone && !shapeNoteKeys.has(`${sIdx}:${f}`) ? 0.7 : 1}
+                        opacity={isHarmonyTone && !harmVoicing && !shapeNoteKeys.has(`${sIdx}:${f}`) ? 0.7 : 1}
                         style={{
                           fill: "#ffffff",
                           stroke: "rgba(0,0,0,0.55)",

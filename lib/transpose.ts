@@ -42,7 +42,12 @@ export function transposeMeasures(measures: Measure[], semitones: number, useFla
       }
       return { ...note, rowIdxList, accidentals };
     }),
-    harmonies: m.harmonies.map((h) => ({ ...h, root: (h.root + n) % 12 })),
+    // 指板入力で決めた押さえ方(voicing)は移調すると形が変わるので捨て、分数コードのベース音も一緒に移す
+    harmonies: m.harmonies.map((h) => {
+      const { voicing: _drop, ...rest } = h;
+      void _drop;
+      return { ...rest, root: (h.root + n) % 12, ...(h.bass !== undefined ? { bass: (h.bass + n) % 12 } : {}) };
+    }),
   }));
 }
 
