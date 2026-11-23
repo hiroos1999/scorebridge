@@ -1137,7 +1137,20 @@ export default function StaffToFretboard({
     | { atMs: number; endMs: number; measureIndex: number; kind: "harmony"; harmony: Harmony }
     | { atMs: number; endMs: number; measureIndex: number; kind: "drum"; voice: DrumVoice };
 
+  // Safari は「押した瞬間」(awaitより前)に音の出口を起こさないと、無音のままになる。
+  // ボタンの処理の最初に同期で呼び、無音を1つ鳴らして確実に起こしておく。
+  function unlockAudio() {
+    const ctx = ensureAudioContext();
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, 22050);
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch {}
+  }
+
   async function handlePlayClick() {
+    if (!isPlaying) unlockAudio();
     if (isPlaying) {
       abortPractice(true);
       stopPlayback();
@@ -2100,6 +2113,7 @@ export default function StaffToFretboard({
   }
   async function playFbVoicing() {
     if (fbPitches.length === 0) return;
+    unlockAudio();
     await ensureSamplesLoaded();
     const actx = ensureAudioContext();
     // 低い弦から順に、少しずつずらして鳴らす(ストローク)。指板の音は記譜より1オクターブ低いので+12して鳴らす
