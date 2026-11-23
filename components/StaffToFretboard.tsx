@@ -2,7 +2,7 @@
 
 import { LANG_STORAGE_KEY, makeTr, type Lang } from "@/lib/i18n";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Sparkles, ClipboardPaste, ScanLine, Square, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Save, Sparkles, ClipboardPaste, ScanLine, Square, Trash2, Upload } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES, TEMPLATE_CATEGORY_LABELS, type TemplateCategory } from "@/lib/templates";
@@ -1762,6 +1762,32 @@ export default function StaffToFretboard({
     loadInitialData(song);
   }
 
+  // 今の譜面(メロディ・コード・キー・拍子)を、この端末のブラウザ内(IndexedDB)に保存する。
+  // 保存した曲を開いて直しているときは上書きするか聞き、断れば新しい名前で保存する。
+  const [savedFlash, setSavedFlash] = useState(false);
+  async function handleSaveSong() {
+    const current = importedSongs.find((s) => s.id === selectedImportId);
+    const snapshot = { root, useFlats, timeSig, measures: measures.map((m) => ({ notes: [...m.notes], harmonies: [...m.harmonies] })) };
+    let song: ImportedSong;
+    if (current && window.confirm(`「${current.name}」に上書きしますか？\n(キャンセルすると新しい名前で保存します)`)) {
+      song = { ...current, ...snapshot };
+    } else {
+      const name = window.prompt("曲名を入力してください", current ? `${current.name} のコピー` : "");
+      if (name === null || !name.trim()) return;
+      song = { id: newId(), name: name.trim(), fileName: "", importedAt: Date.now(), warnings: [], ...snapshot };
+    }
+    try {
+      await saveImportedSong(song);
+    } catch (err) {
+      window.alert(`保存に失敗しました: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    setImportedSongs((prev) => [song, ...prev.filter((s) => s.id !== song.id)]);
+    setSelectedImportId(song.id);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1500);
+  }
+
   async function handleDeleteImportedSong(id: string) {
     await deleteImportedSong(id);
     setImportedSongs((prev) => prev.filter((s) => s.id !== id));
@@ -3182,6 +3208,13 @@ export default function StaffToFretboard({
               </option>
             ))}
           </select>
+          <IconButton
+            id="save-song-btn"
+            label={savedFlash ? tr("Saved") : tr("Save this song")}
+            icon={<Save size={16} />}
+            active={savedFlash}
+            onClick={() => void handleSaveSong()}
+          />
           {selectedImportId && (
             <IconButton
               id="my-imports-delete-btn"
