@@ -2,7 +2,7 @@
 
 import { LANG_STORAGE_KEY, makeTr, type Lang } from "@/lib/i18n";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Save, Sparkles, ClipboardPaste, ScanLine, Square, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eraser, Play, Plus, Repeat, Save, Sparkles, ClipboardPaste, ScanLine, Square, Trash2, Upload, UserRound } from "lucide-react";
 import { CHORD_TYPES } from "@/lib/chords";
 import { noteSpan, snapGrid } from "@/lib/grid";
 import { TEMPLATES, TEMPLATE_CATEGORY_LABELS, type TemplateCategory } from "@/lib/templates";
@@ -13,6 +13,7 @@ import { parseChordProgression } from "@/lib/chordText";
 import { preprocessScoreImage } from "@/lib/imagePreprocess";
 import { parseMusicXmlFile, type MusicXmlImportResult } from "@/lib/musicxmlImport";
 import { deleteImportedSong, listImportedSongs, saveImportedSong, type ImportedSong } from "@/lib/importStorage";
+import { cloud, deleteAllCloudSongs, deleteCloudSong, listCloudSongs, saveCloudSong, sendLoginLink, signOut, type Session } from "@/lib/cloudSongs";
 import { SHAPE_ORDER, shapeNotes, shapeQualityFor, type ShapeName } from "@/lib/caged";
 import { drop2Voicings, DROP2_SETS } from "@/lib/drop2";
 import IconButton from "@/components/IconButton";
@@ -1748,11 +1749,81 @@ export default function StaffToFretboard({
 
   // ページ表示時に、IndexedDBに保存済みのインポート曲一覧を読み込んでおく
   // （サーバーには問い合わせない。ブラウザローカルのIndexedDBだけを見る）。
+  // ログイン(Supabase)。ログイン中は「保存した曲」をアカウントに、そうでなければこの端末に保存する
+  const [session, setSession] = useState<Session | null>(null);
+  // サーバーで描いた画面と食い違わないよう、ログインのボタンは画面が開いてから出す
+  const [cloudReady, setCloudReady] = useState(false);
   useEffect(() => {
-    listImportedSongs()
-      .then(setImportedSongs)
-      .catch((err) => console.error("インポート済み曲の読み込みに失敗しました", err));
+    const ready = () => setCloudReady(!!cloud);
+    ready();
   }, []);
+  const userId = session?.user.id ?? null;
+  useEffect(() => {
+    if (!cloud) return;
+    cloud.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = cloud.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => data.subscription.unsubscribe();
+  }, []);
+  const saveSong = (song: ImportedSong) => (userId ? saveCloudSong(song) : saveImportedSong(song));
+  const removeSong = (id: string) => (userId ? deleteCloudSong(id) : deleteImportedSong(id));
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (!userId) {
+          const local = await listImportedSongs();
+          if (!cancelled) setImportedSongs(local);
+          return;
+        }
+        // 初めてログインしたときだけ、この端末に保存してある曲をアカウントへ移すか聞く
+        const flag = `sb-migrated-${userId}`;
+        let migrated = false;
+        try { migrated = localStorage.getItem(flag) === "1"; } catch {}
+        if (!migrated) {
+          const local = await listImportedSongs();
+          if (local.length > 0 && window.confirm(`この端末に保存してある${local.length}曲を、アカウントに移しますか？`)) {
+            for (const song of local) await saveCloudSong(song);
+          }
+          try { localStorage.setItem(flag, "1"); } catch {}
+        }
+        const songs = await listCloudSongs();
+        if (!cancelled) setImportedSongs(songs);
+      } catch (err) {
+        console.error("保存した曲の読み込みに失敗しました", err);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // ログインの小さなパネル(メールに届くリンクを押すだけ。パスワードは無い)
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginState, setLoginState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  async function handleSendLoginLink() {
+    if (!loginEmail.trim()) return;
+    setLoginState("sending");
+    try {
+      await sendLoginLink(loginEmail.trim());
+      setLoginState("sent");
+    } catch (err) {
+      console.error(err);
+      setLoginState("error");
+    }
+  }
+  async function handleDeleteAccountData() {
+    if (!window.confirm("アカウントに保存した曲をすべて削除してログアウトします。元に戻せません。よろしいですか？")) return;
+    try {
+      await deleteAllCloudSongs();
+      await signOut();
+      setAccountOpen(false);
+    } catch (err) {
+      window.alert(`削除に失敗しました: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   // 「マイインポート」選択UIから、保存済みインポート曲を読み込む。テンプレートと
   // 同様、読み込んだ後は通常のmeasures stateとして自由に編集できる。
@@ -1777,7 +1848,7 @@ export default function StaffToFretboard({
       song = { id: newId(), name: name.trim(), fileName: "", importedAt: Date.now(), warnings: [], ...snapshot };
     }
     try {
-      await saveImportedSong(song);
+      await saveSong(song);
     } catch (err) {
       window.alert(`保存に失敗しました: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -1789,7 +1860,7 @@ export default function StaffToFretboard({
   }
 
   async function handleDeleteImportedSong(id: string) {
-    await deleteImportedSong(id);
+    await removeSong(id);
     setImportedSongs((prev) => prev.filter((s) => s.id !== id));
     setSelectedImportId((prev) => (prev === id ? "" : prev));
   }
@@ -1821,7 +1892,7 @@ export default function StaffToFretboard({
         measures: result.measures,
         warnings: result.warnings,
       };
-      await saveImportedSong(song);
+      await saveSong(song);
       setImportedSongs((prev) => [song, ...prev]);
       setSelectedImportId(song.id);
       setLastImportWarnings({ fileName: file.name, warnings: result.warnings });
@@ -1884,7 +1955,7 @@ export default function StaffToFretboard({
         measures: merged.measures,
         warnings: ["楽譜画像をOMR(Audiveris)で変換した結果です。音符・リズムの誤認識がないか確認してください。", ...merged.warnings],
       };
-      await saveImportedSong(song);
+      await saveSong(song);
       setImportedSongs((prev) => [song, ...prev]);
       setSelectedImportId(song.id);
       setLastImportWarnings({ fileName: file.name, warnings: song.warnings });
@@ -3215,6 +3286,15 @@ export default function StaffToFretboard({
             active={savedFlash}
             onClick={() => void handleSaveSong()}
           />
+          {cloudReady && (
+            <IconButton
+              id="account-btn"
+              label={session ? `${tr("Account")}: ${session.user.email ?? ""}` : tr("Log in")}
+              icon={<UserRound size={16} />}
+              active={!!session}
+              onClick={() => setAccountOpen((v) => !v)}
+            />
+          )}
           {selectedImportId && (
             <IconButton
               id="my-imports-delete-btn"
@@ -3255,6 +3335,41 @@ export default function StaffToFretboard({
             />
           )}
         </div>
+        {cloudReady && accountOpen && (
+          <div id="account-panel" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "8px 0 0", padding: 12, borderRadius: 12, background: "rgba(255,255,255,0.06)", fontSize: 14 }}>
+            {session ? (
+              <>
+                <span>{session.user.email}</span>
+                <span style={{ color: "var(--text-secondary)" }}>{tr("Saved songs are kept in your account")}</span>
+                <span style={{ marginLeft: "auto", display: "inline-flex", gap: 8 }}>
+                  <button type="button" className="sb-chip" style={{ minHeight: 36, padding: "0 12px" }} onClick={() => { void signOut(); setAccountOpen(false); }}>{tr("Log out")}</button>
+                  <button type="button" className="sb-chip" style={{ minHeight: 36, padding: "0 12px" }} onClick={() => void handleDeleteAccountData()}>{tr("Delete my data")}</button>
+                </span>
+              </>
+            ) : loginState === "sent" ? (
+              <span>{tr("Check your email and open the login link.")}</span>
+            ) : (
+              <>
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder={tr("Email address")}
+                  aria-label={tr("Email address")}
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void handleSendLoginLink(); }}
+                  style={{ minHeight: 36, padding: "0 10px", borderRadius: 8, minWidth: 240, fontSize: 16 }}
+                />
+                <button type="button" className="sb-chip" style={{ minHeight: 36, padding: "0 12px" }} disabled={loginState === "sending"} onClick={() => void handleSendLoginLink()}>
+                  {tr("Send login link")}
+                </button>
+                {loginState === "error" && <span style={{ color: "#f08a7e" }}>{tr("Could not send. Please try again later.")}</span>}
+                <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: "var(--text-secondary)", marginLeft: "auto" }}>{tr("Privacy policy")}</a>
+              </>
+            )}
+          </div>
+        )}
 
         {mode === "tones" && (
         <div className="toolbar-group sb-playgroup" style={{ marginLeft: "auto", background: "transparent", borderColor: "transparent", paddingRight: 0 }}>
